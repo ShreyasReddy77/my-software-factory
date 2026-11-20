@@ -41,7 +41,7 @@ The one small workflow an owned repo carries, which only tells the factory that 
 _Avoid_: agent workflow, installer, webhook
 
 **Trusted author**:
-Someone with write access to the target repo, or the factory itself. Only trusted authors' words reach an agent, with two exceptions. When a trusted author labels an issue for the factory, they vouch for its title and body as they stood at that moment, whoever wrote them. On an upstream repo, the maintainers' review comments are also read, but only the ones present when the user started the round.
+A person with write access to the target repo, or the factory itself. Other bots and apps never count, even with write access. Only trusted authors' words reach an agent, with two exceptions. When a trusted author labels an issue for the factory, they vouch for its title and body as they stood at that moment, whoever wrote them. On an upstream repo, the maintainers' review comments are also read, but only the ones present when the user started the round.
 _Avoid_: collaborator, maintainer, allowed user
 
 **Test repo**:
