@@ -4,8 +4,12 @@ A portable software factory: GitHub Actions orchestrates Sandcastle runs that tu
 
 ## Language
 
+**Companion**:
+The factory's private twin. It runs the factory's own code on private target repos, and holds everything about them, so nothing private ever reaches the public factory.
+_Avoid_: private factory, mirror, fork
+
 **Factory**:
-This repository: the one central place whose orchestration, Sandcastle scripts and ICM maps serve every target repo.
+This repository: the one central, public place whose orchestration and Sandcastle scripts serve every target repo, and which holds the ICM maps of public targets.
 _Avoid_: factory kit, template, per-repo install
 
 **Registration**:
