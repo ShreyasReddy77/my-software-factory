@@ -29,8 +29,20 @@ Merged to the target repo's default branch. Deployment belongs to the target rep
 _Avoid_: deployed, released, in production
 
 **Trust ladder**:
-The per-target-repo sequence of rungs that loosens human review as measured PR quality earns it, ending in auto-merge for the change kinds that qualify. Applies only to owned repos.
+The sequence of steps that loosens human review as measured PR quality earns it, ending in auto-merge for the change kinds that qualify. Each owned repo climbs it separately for each change kind. Applies only to owned repos.
 _Avoid_: autonomy level, maturity model
+
+**Step**:
+One level of the trust ladder: how much human review a PR of a given change kind gets before it merges.
+_Avoid_: rung, level, tier
+
+**Change kind**:
+A category of change a PR makes (such as documentation or a new feature) that earns trust on its own. A failure in one change kind never costs another its step.
+_Avoid_: change type, PR type, category
+
+**Lesson ticket**:
+A ticket the factory files after one of its PRs goes bad, proposing one new check or ICM map note so the mistake does not repeat. Nothing changes until a human approves it.
+_Avoid_: postmortem, retro, incident
 
 **ICM map**:
 An ICM workspace describing one target repo (its structure, checks, standards and hazards) that every run reads first to find its way around.
