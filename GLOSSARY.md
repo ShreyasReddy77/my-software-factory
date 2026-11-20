@@ -13,7 +13,7 @@ This repository: the one central, public place whose orchestration and Sandcastl
 _Avoid_: factory kit, template, per-repo install
 
 **Registration**:
-The act of adding a target repo to the factory, after which runs may work on it.
+The act of adding a target repo to the factory. It is complete when the user accepts the repo's first ICM map, which confirms its checks; only then may runs change its code. For an upstream repo it happens on the first piece of work there.
 _Avoid_: install, onboarding, enrolment
 
 **Stable**:
