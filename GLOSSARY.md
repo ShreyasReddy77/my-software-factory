@@ -17,7 +17,7 @@ The act of adding a target repo to the factory. It is complete when the user acc
 _Avoid_: install, onboarding, enrolment
 
 **Stable**:
-The version of the factory's scripts and prompts that most target repos run. The user moves it forward by hand, once a change has proven itself on the test repos.
+The version of the factory's code (scripts, prompts and workflow logic) that most target repos run. Settings and ICM maps are not part of it: runs always read the latest. The user moves it forward by hand once a change has proven itself on the test repos, and moves it back to roll a change back. A run keeps the version it started on until it finishes.
 _Avoid_: release, production, latest
 
 **Target repo**:
