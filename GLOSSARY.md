@@ -47,3 +47,15 @@ _Avoid_: postmortem, retro, incident
 **ICM map**:
 An ICM workspace describing one target repo (its structure, checks, standards and hazards) that every run reads first to find its way around.
 _Avoid_: context file, repo docs, index
+
+**Budget**:
+How much Claude usage the factory may spend, set once for the whole factory and shared by every target repo: which plan or key pays, how many runs it starts, and which tasks go first when usage is short.
+_Avoid_: quota, allowance, rate limit (the plan's own limit is what the budget is sized against, not the budget)
+
+**Budget pause**:
+The factory-wide state in which no run calls Claude, because a usage limit was hit or credit ran out. It is visible as one open ticket, and while it is open, runs pause their work instead of starting it.
+_Avoid_: outage, freeze, cooldown
+
+**Ceiling**:
+The most turns and time a single run of a task may spend. A run that reaches it stops and counts as a failed try.
+_Avoid_: timeout, cap (the cap counts runs, the ceiling bounds one run)
