@@ -6,6 +6,7 @@ This repo is the **factory**: one central place where GitHub Actions orchestrate
 
 - **The map** is issue #1, "Design a central software factory for any GitHub codebase". Read it before any design work: its Destination, Notes and Decisions so far hold every settled choice. Work its tickets with the `wayfinder` skill.
 - **Vocabulary**: speak the `software-factory` skill's terms (task, trigger, run, runner, ticket tracker, git host, orchestrator) plus the terms in [GLOSSARY.md](GLOSSARY.md). When a term is resolved or challenged, update GLOSSARY.md using the `domain-modeling` skill.
+- **Standards**: before writing or reviewing the factory's own code, read [CODING_STANDARDS.md](CODING_STANDARDS.md).
 - **ICM**: for anything touching a target repo's ICM map, use the `icm-architect` skill.
 
 ## The v0 factory
