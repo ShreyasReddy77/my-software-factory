@@ -44,7 +44,7 @@ Products the tasks build on, below the slots:
 | Claude credential | A subscription OAuth token or an API key, chosen in `budget.yml` | [Budget] |
 | Credential relay | The factory's own ~80-line Node relay, no dependencies | [Credential relay] |
 | GitHub credentials | One GitHub App (per-step tokens), plus one shim token per owned repo | [Security model] |
-| Secret scan in the push step | gitleaks (or an equivalent standard scanner), plus a literal search for the Claude token | [Security model] |
+| Secret scan in the push step | gitleaks, pinned to an exact version and run on the agent's new commits only, plus a literal search for the Claude token | [Security model], Foundation session |
 
 ## Cross-cutting rules
 
@@ -63,7 +63,7 @@ Each rule holds for every task unless the task's section says otherwise.
 - **A label vouches for the issue as it stood.** When a trusted author adds `agent:implement` or `agent:explore`, the issue's title and body as they stood at that moment reach the agent, whoever wrote them. A later edit is ignored in favour of that version, and the run says so. Strangers' comments are still dropped. ([Explore], amending [Implement])
 - **Upstream exception:** upstream address-review reads the maintainers' public review comments, but only those present when the user applied the label. ([Security model])
 - **A label is checked in the run.** A shim's dispatch is never believed: the factory re-reads the issue or PR with its own App token and ends quietly unless the label is really there and a trusted author applied it. ([Security model])
-- **Only a person's label or a factory clock starts work.** No chain of runs starts from an issue being filed. The factory's own tickets (lesson, self-improvement, budget pause, move, register, re-map) obey this. *See [Gaps](#gaps) G4 on how many clocks there are.* ([Ticket sources], [Requeue run])
+- **Only a person's label or one of the factory's three clocks starts work.** The clocks are the requeue run (hourly, in the factory), the watch (daily, in the factory and the companion) and the self-improvement run (weekly, in the companion); nothing else runs on a schedule. No chain of runs starts from an issue being filed. The factory's own tickets (lesson, self-improvement, budget pause, move, register, re-map) obey this: the run that files or adds to a lesson ticket starts the lesson-draft run directly, never through an "issue opened" trigger, so a person filing a lookalike issue starts nothing. ([Ticket sources], [Requeue run], Foundation session)
 - **Factory tasks touch only the factory's own PRs.** Review, fix-CI, address-review and merge act only on PRs that implement (or the map run) opened. To get the factory working on a bot's or a person's PR, file a ticket and label it. ([Ticket sources])
 
 ### Credentials and the sandbox
@@ -72,15 +72,29 @@ Each rule holds for every task unless the task's section says otherwise.
 
   | Credential | Lives in | Can do |
   |---|---|---|
-  | GitHub App private key | A secret in the factory and one in the companion, read only by the host steps that mint tokens | Mints a token per host step: one repo, that host step's permissions, expires within the hour (`actions/create-github-app-token`). Installed on owned repos, the user's forks, the factory and the companion. **Never granted Workflows permission.** |
+  | GitHub App private key | A secret in the factory and one in the companion, read only by the host steps that mint tokens | Mints a token per host step: one repo, that host step's permissions, expires within the hour (`actions/create-github-app-token`). Installed on owned repos, the user's forks, the factory and the companion. **Never granted Workflows permission** (full list below). |
   | Claude token | A secret in the factory and one in the companion, read only by the relay's host step | Factory-only (revoking it never touches the user's own Claude use), spending-capped where the plan allows, rotated every few months, revoked on odd usage. |
   | Shim token | A secret in each owned repo | Fine-grained, on the factory (or the companion) only, **Actions: write** only: it can start factory workflows and nothing else. |
 
   `FACTORY_PAT` is retired.
+- **The App's full permission set** (repository permissions; each token asks only for what its host step needs) (Foundation session):
+
+  | Permission | For |
+  |---|---|
+  | Metadata: read | required by GitHub; checking whether a person has write access |
+  | Contents: read/write | branches, pushes, `trust.yml` commits, merges |
+  | Issues: read/write | labels, comments, the factory's own tickets |
+  | Pull requests: read/write | opening, marking ready, review comments, merging |
+  | Actions: read/write | listing and counting runs, starting runs (gate run → agent run, the requeue runs), re-running checks |
+  | Checks: read/write | posting `factory/checks`; reading the target's CI |
+  | Commit statuses: read | reading CI that reports as commit statuses |
+  | **Never** | Workflows, Administration, Secrets, Variables, or any organisation permission |
+
+- **What the factory does inside the companion,** with an App token scoped to it: counts its runs and its waiting items (numbers only, never titles), starts its requeue run, and files or comments on move tickets. The other way, companion runs read the factory's `budget.yml`, comment on the factory's budget-pause ticket (which says nothing private), and start the factory's requeue run when one of their agent runs finishes. (Foundation session, amending [Requeue run])
 - **The agent runs under `bwrap()` with no GitHub credential anywhere it can read.** The checkout uses `persist-credentials: false`, and the host step that launches Sandcastle carries no secret at all, because `/proc/1/environ` exposes that host step's environment inside `bwrap()`. *Why:* the [Sandbox timing] spike read both leaks. `bwrap()` costs 5–17 s of setup per run against `docker()`'s ~50 s warm or ~2 min cold.
 - **The Claude token stays behind a relay.** A relay started in an earlier, separate host step receives the real token on stdin and forwards `POST /v1/messages`. The agent gets `ANTHROPIC_BASE_URL` pointing at it and a useless stand-in token. The relay passes on only the credential `budget.yml` names. *Why:* the [Credential relay] test found the real token nowhere in the sandbox. The agent can still spend the token while the run lasts, so the budget's caps remain the guard. The token-inside fallback is dropped. ([Security model], amended by [Credential relay])
 - **Keep `ANTHROPIC_API_KEY` unset** wherever a subscription token is in use: it silently outranks the OAuth token. ([Claude Pro limits])
-- **The push step guards every push.** On the host, before pushing, it scans the agent's commits for secrets (the Claude token's literal value, gitleaks, and the names of private targets) and for any change under `.github/workflows/`. If either trips, it pushes nothing, comments, and counts a failed try. Otherwise it pushes and opens or updates the PR with an App token. ([Security model], [Private maps]) Fix-CI's push step also refuses commits that remove a test or add a skip ([Fix-CI and address-review]).
+- **The push step guards every push.** On the host, before pushing, it scans the agent's new commits for secrets (the Claude token's literal value, gitleaks, and, once private targets exist, their names; *see [Gaps](#gaps) G5*) and for any change under `.github/workflows/`. If either trips, it pushes nothing, comments, and counts a failed try. Otherwise it pushes and opens or updates the PR with an App token. ([Security model], [Private maps]) Fix-CI's push step also refuses commits that remove a test or add a skip ([Fix-CI and address-review]).
 - **The factory never changes `.github/workflows/` on any repo,** its own included. A ticket that needs one goes back to the human. *Why:* the App has no Workflows permission, so no factory change can widen its own reach. ([Security model], [Self-improvement])
 - **A target's own Claude settings:** owned repos obey `.claude/settings.json`, hooks included. Upstream repos' settings are ignored (hooks, permission changes, extra tools); their style is still enforced through the checks and the ICM map. Everywhere, the target's `CLAUDE.md` is obeyed or ignored section by section, as the ICM map says. ([Security model], [ICM map prototype])
 - **Accepted for v1:** egress stays open, and upstream checks run strangers' code inside the sandbox. The planned upgrade is a paid microVM sandbox, so the sandbox provider is a single setting. ([Security model])
@@ -90,11 +104,34 @@ Each rule holds for every task unless the task's section says otherwise.
 
 - **`budget.yml` at the factory root is the only place plan settings live:** the credential (`subscription` or `api-key`), the model per task, the daily run cap, concurrency, the priority order, and the ceilings per task. Target repos cannot override it. Tasks never hard-code a model or a credential. Moving from Pro to Max means regenerating one secret. *Why:* the factory must run on any Claude plan. ([Budget])
 - **Starting values:** on Pro, concurrency 1 and 8 runs a day, tuned against `/usage`; Max is roughly ×5. ([Budget])
-- **Ceilings:** a turn limit passed to Claude Code plus the Actions job's time limit. Implement-type tasks 80 turns and 45 minutes; review and explore 30 turns and 15 minutes; map 50 turns and 30 minutes. A run that hits one pushes its work as a draft, comments, and counts as a failed try. *See [Gaps](#gaps) G3 and G6.* ([Budget])
-- **Priority when budget is short: finish before start.** Merge, then fix-CI and address-review, then review, then implement and implement-spec, then explore and map; oldest first within each. The order is a list in `budget.yml`. ([Budget])
+- **`budget.yml`'s shape** (Foundation session):
+
+  ```yaml
+  credential: subscription        # or api-key
+  daily_runs: 8
+  concurrent_runs: 1
+  priority:                       # finish before start; oldest first within a group
+    - [merge]
+    - [fix-ci, address-review]
+    - [review]
+    - [implement, implement-spec]
+    - [explore, map, lesson-draft, self-improvement]
+  tasks:
+    implement: { model: claude-opus-5-5, max_turns: 80, agent_minutes: 45 }
+    # ...one line per agent task
+  ```
+
+  Loading it refuses an agent task missing from `tasks:`, and a model that is an alias or a Fable model.
+- **Ceilings,** one per agent task in `budget.yml` so each can be tuned alone. Starting values: implement, fix-CI and address-review 80 turns and 45 minutes; map, implement-spec's split and self-improvement 50 turns and 30 minutes; review, explore and lesson-draft 30 turns and 15 minutes. A run that hits one pushes its work as a draft, comments, and counts as a failed try. *See [Gaps](#gaps) G3.* ([Budget], Foundation session)
+- **Two time limits.** `agent_minutes` is the agent's limit, enforced by Sandcastle, so the run still has time to scan and push. The Actions job's `timeout-minutes` is `agent_minutes` plus 15, covering setup, the scan and the push; if that one fires, something hung, and it counts as a crash (a failed try). (Foundation session)
+- **Models of the two extra runs:** the lesson-draft run and the weekly self-improvement run are both agent runs on Sonnet. (Foundation session)
+- **Priority when budget is short: finish before start.** Merge, then fix-CI and address-review, then review, then implement and implement-spec, then explore, map, lesson-draft and self-improvement; oldest first within each. The order is a list in `budget.yml`. ([Budget], Foundation session)
 - **A run never waits for budget.** Hitting a subscription's 5-hour or weekly limit: the run fails fast, comments "Paused: usage limit, resets at <time>", labels the item `factory:paused`. Out of API credit or over a spend limit (an error with no reset time): the same, with no reset time. A pause is not a try. ([Budget])
 - **One budget-pause ticket** in the factory, "Claude usage paused until <time>" or "Out of Claude credit". The first run that hits a limit opens it or comments on it. **Every run checks it first**, before setting up the sandbox, and pauses its item without calling Claude while it is open. The requeue run closes a timed pause once its reset has passed; the human closes a credit pause after topping up. Companion runs check the same ticket. ([Budget], [Private maps])
-- **Caps are enforced by the factory,** not by Actions `concurrency:` groups. The pre-run gates count in-flight runs and today's runs across both repos; when either is full the item is labelled `factory:queued` and the run ends. `target.yml`'s optional `max_runs_per_day` limits one repo's share of the daily cap. Merge spends no budget, so it skips the budget gates. ([Budget], [Registration], [Merge and watch])
+- **Caps are enforced by the factory,** not by Actions `concurrency:` groups. The pre-run gates count in-flight runs and today's runs across both repos; when either is full the item is labelled `factory:queued` and the run ends. `target.yml`'s optional `max_runs_per_day` limits one repo's share of the daily cap. ([Budget], [Registration], [Merge and watch])
+- **Only agent runs count.** The daily cap and the concurrency limit count only runs that call Claude; an explore batch is one. Register, move, merge, the watch, the requeue run and gate runs spend no budget, so they never count, and merge skips the budget gates. "Today" starts at midnight UTC. (Foundation session)
+- **A gate run starts the agent run.** Every agent task is two Actions runs: a short **gate run** passes the pre-run gates and claims the item, then starts the task's **agent run** (by `workflow_dispatch`, passing the pinned factory commit). Today's runs are the agent runs created since midnight UTC, and runs in flight are the agent runs still queued or running: one list call per repo, with no per-run lookups. (Foundation session)
+- **A clock run with no slot.** The lesson-draft run has a ticket, so it queues like any other item. The weekly self-improvement run has no item: with no slot it skips the week and says so in its run summary. Its window is "since the last self-improvement run that finished", so a skip loses nothing. (Foundation session)
 
 ### The pre-run gates
 
@@ -112,7 +149,8 @@ Upstream runs add the policy check first ([Upstream flow]), and `agent:upstream`
 ### Locks, tries and claims
 
 - **Claim:** a run swaps its trigger label for `agent:in-progress` before agent work. ([Implement], v0)
-- **Locks** (an Actions `concurrency` group each, never cancelling a run in progress; *see [Gaps](#gaps) G1*):
+- **A lock queues, it never drops.** An Actions `concurrency` group keeps one waiting run and cancels the rest, which would strand a third run's label with nothing running. So locks are built from run names instead: every run puts its lock key in its run name (e.g. `[pr owner/repo#5] review`), and at its gate lists the runs in progress in that repo's side (factory or companion). If an **earlier** run holds the same key, this run labels its item `factory:queued` and ends, as on a full budget, and the requeue run restarts it. Two runs starting together can't both go ahead: the earlier wins. Merge, finding its PR locked, does nothing and waits for its next wake-up. The requeue run and the watch keep plain concurrency groups, because a dropped copy is harmless: the next one re-reads everything. (Foundation session, amending the tickets below)
+- **Locks:**
 
   | Lock | Covers | Source |
   |---|---|---|
@@ -120,8 +158,8 @@ Upstream runs add the policy check first ([Upstream flow]), and `agent:upstream`
   | Per target repo | an explore batch | [Explore] |
   | Per ticket | implement; the upstream loops on a factory ticket | [Implement], [Fix-CI and address-review] |
   | Per PR | review, fix-CI, address-review and merge, shared | [Review], [Fix-CI and address-review], [Merge and watch] |
-  | Per target repo | the daily watch | [Merge and watch] |
-  | One running, one waiting (drops the rest) | the requeue run | [Requeue run] |
+  | Per target repo, concurrency group | the daily watch | [Merge and watch] |
+  | One running, one waiting (drops the rest), concurrency group | the requeue run | [Requeue run] |
 
 - **One open factory PR per ticket.** A spare copy that slips through counts neither way on the trust ladder. A push rejected because someone pushed mid-run goes to a side branch (`<branch>-review-<run id>` or `<branch>-<task>-<run id>`) with no PR; its link is commented and the PR gets `agent:blocked`. This replaces v0's second PR. ([Review], [Fix-CI and address-review])
 - **A try** is one run in a loop that counts toward the loop's cap. A crash, a ceiling hit or a failed push is a failed try. A deliberate stop with a reason, a budget pause, a flaky rerun, or a broken default branch is not. ([Fix-CI and address-review], GLOSSARY.md)
@@ -200,7 +238,7 @@ Upstream runs add the policy check first ([Upstream flow]), and `agent:upstream`
 | `agent:in-progress` | the run | Claimed. |
 | `agent:blocked` | the run | A crash, ceiling, cap or rejected push; a human re-adds the trigger to retry. |
 | `factory:needs-human` | the run | Stopped for a human, with a reason. Never restarted by the factory. |
-| `factory:queued` | the run | Waiting for a slot; the requeue run restarts it. |
+| `factory:queued` | the run | Waiting for a budget slot or a lock; the requeue run restarts it. |
 | `factory:paused` | the run | Waiting on a budget pause or `enabled: false`; the requeue run restarts it. |
 | `factory:ready-to-merge` | merge | Steps 1 and 2: green and reviewed, waiting on the human. |
 | `policy:accepted` | the user | The user takes responsibility for an unknown policy verdict. |
@@ -226,7 +264,7 @@ A map is about 1,300 words for a ~2,600-line repo. `change-kinds.yml` and `trust
 
 ### State held outside files
 
-Labels; hidden marker comments (the task a queued item restarts as, and merge's "merge" marker on held PRs); the budget-pause ticket; the companion's yes/no "I have waiting items" repo variable; git history (the track record). Runners keep nothing.
+Labels; hidden marker comments (the task a queued item restarts as, and merge's "merge" marker on held PRs); the budget-pause ticket; run names (lock keys, and which agent runs count against the budget); git history (the track record). Runners keep nothing.
 
 ## The five answers for every task
 
@@ -307,7 +345,7 @@ Kept from v0: cold and memory-less, fixes what it can, inline comments for the r
 
 1. **Trigger:** `agent:review` on a factory PR. The checks host step adds it whenever `factory/checks` is green on a commit review hasn't seen; a person can add it too. The shim forwards it; the factory re-checks it.
 2. **Does:**
-   - The pre-run gates, the claim, and the per-PR lock (never cancelling). Counts against the daily cap.
+   - The pre-run gates, the claim, and the per-PR lock. Counts against the daily cap.
    - **Standards** are the target's own rules and style guide as its ICM map names them (replacing v0's `CODING_STANDARDS.md`); if the map names none, it says "no standards found" and still checks for bugs. **Spec** is the ticket the PR closes.
    - It fixes everything the rules decide and leaves only product decisions and missing information as inline comments. After pushing fixes, the checks run again and post a fresh `factory/checks`.
    - Push rejected → side branch `<branch>-review-<run id>`, no PR, `agent:blocked`.
@@ -365,18 +403,18 @@ Kept from v0: cold and memory-less, fixes what it can, inline comments for the r
    - Recounts the last 14 days of factory PRs from the git host. For each new bad PR, demotes its kind with a direct commit to `trust.yml` and files or adds to a lesson ticket in the factory (or companion) with the evidence: the PR, the bad sign, the revert or red run.
    - After N good PRs in a row for a kind, opens the promotion PR. Never for the factory repo itself, whose kinds are fixed at step 1 ([Self-improvement]).
    - **Stale-map check (no agent):** the paths and functions or symbols named in hazards and structure still exist; the files `checks.md` lists are unchanged since the mapped-at commit; fewer than 100 commits since the mapped-at commit (or since the last dismissal). Any signal opens or comments on the target's one "Re-map owner/repo" ticket (`factory:needs-human`).
-3. **Triggers next:** a new lesson ticket starts a short **lesson-draft run** (Sonnet, counted against the budget) that drafts its single proposal on the ticket. The user's `agent:lesson` approves it: a map note becomes a map PR the user merges (it never moves the mapped-at commit); a new check becomes an `agent:implement` ticket on the target. Closing the lesson ticket rejects it.
+3. **Triggers next:** filing or adding to a lesson ticket starts a short **lesson-draft run** (Sonnet, counted against the budget, last in priority) directly from the run that filed it; it drafts its single proposal on the ticket. The user's `agent:lesson` approves it: a map note becomes a map PR the user merges (it never moves the mapped-at commit); a new check becomes an `agent:implement` ticket on the target. Closing the lesson ticket rejects it.
 4. **Human re-enters:** approving or closing lessons; merging or closing promotion PRs; adding `agent:map` to a Re-map ticket, or closing it to dismiss its signals as of the default branch's current commit.
 5. **No double work:** one lock per target. An open lesson is added to, never duplicated; one Re-map ticket per target. Demotion is idempotent because the track record is recounted, never stored.
 
 ### Requeue run (no agent) — [Requeue run], from [Budget]
 
-1. **Trigger:** hourly, in the factory only (free minutes); whenever any factory run finishes; the factory's own merges; a push changing any `target.yml`. A concurrency group keeps one running and one waiting and drops the rest, which is safe because the waiting run re-reads everything.
+1. **Trigger:** hourly, in the factory only (free minutes); whenever any factory run or companion agent run finishes; the factory's own merges; a push changing any `target.yml`. A concurrency group keeps one running and one waiting and drops the rest, which is safe because the waiting run re-reads everything.
 2. **Does:**
    - Counts in-flight and today's runs across the factory and the companion (numbers only) against `budget.yml`.
    - Closes a timed budget-pause ticket whose reset has passed.
    - Restarts the factory's own `factory:queued` and `factory:paused` items into free slots, in `budget.yml`'s priority order, oldest first: removes the label and re-adds the original trigger label (named by the hidden marker comment) with an App token. The task re-runs every gate; if it loses the slot to a race, it queues again.
-   - **Hands over to the companion** if slots remain and the companion's repo variable says it has waiting items: starts the companion's requeue run, which fills the rest from its own items and clears the flag when empty. The companion sets the flag whenever one of its runs queues or pauses an item. *Trade-off accepted:* public items are offered slots first, so finish-before-start holds only within each repo (this replaces [Private maps]' "restarts paused work in both repos, in priority order").
+   - **Hands over to the companion** if slots remain and a search counts any companion issues or PRs labelled `factory:queued` or `factory:paused` (the number only, never titles): starts the companion's requeue run, which fills the rest from its own items. No flag is stored (Foundation session, replacing [Requeue run]'s repo variable). *Trade-off accepted:* public items are offered slots first, so finish-before-start holds only within each repo (this replaces [Private maps]' "restarts paused work in both repos, in priority order").
    - Moves live spec queues forward: labels `agent:implement` on queue tickets whose dependencies' PRs merged and that aren't in progress, stopped or blocked.
    - Starts the next explore batch for any repo with issues still labelled `agent:explore`, one batch per repo at a time.
    - Restarts merges held by `enabled: false` once the repo is back on, in the merge priority, taking no slot.
@@ -386,13 +424,13 @@ Kept from v0: cold and memory-less, fixes what it can, inline comments for the r
 
 ### Weekly self-improvement run (in the companion) — [Self-improvement], amended by [Private maps]
 
-1. **Trigger:** a weekly clock in the companion.
-2. **Does:** reads the past week's lesson tickets, demotions, given-up runs (loops that hit their cap) and ceiling hits across every target, public and private, with read-only App tokens. Looks for patterns that point at the factory rather than one repo, and files **at most two** tickets in the companion, each with the pattern, the evidence and the proposed fix. Reports how far `main` is ahead of `stable` and how the test-repo runs since then went. A fix PR to the public factory never quotes private code, paths or repo names.
+1. **Trigger:** a weekly clock in the companion. It is an agent run (Sonnet, last in priority); with no free slot it skips the week and says so.
+2. **Does:** reads, since the last self-improvement run that finished, the lesson tickets, demotions, given-up runs (loops that hit their cap) and ceiling hits across every target, public and private, with read-only App tokens. Looks for patterns that point at the factory rather than one repo, and files **at most two** tickets in the companion, each with the pattern, the evidence and the proposed fix. Reports how far `main` is ahead of `stable` and how the test-repo runs since then went. A fix PR to the public factory never quotes private code, paths or repo names.
 3. **Triggers next:** nothing. A ticket is built only when the user labels it `agent:implement`.
 4. **Human re-enters:** labelling a ticket to build it, merging its PR (always the user), moving `stable` forward.
 5. **No double work:** before filing, it reads open and closed self-improvement tickets. Open: new evidence becomes a comment. Closed as not planned: stays closed unless evidence newer than the close appears, then a fresh ticket links the old one and says what is new. Closed as done but the pattern returns: that counts as new evidence.
 
-*See [Gaps](#gaps) G5 and G6.*
+*See [Gaps](#gaps) G5.*
 
 ### Upstream flow
 
@@ -428,14 +466,16 @@ Built in order, each its own `/to-spec` → `/to-tickets` → `/implement-spec` 
 ### 1. Foundation
 
 **Delivers:**
-- The GitHub App and per-host-step tokens; `FACTORY_PAT` retired.
+- The GitHub App with [its full permission set](#credentials-and-the-sandbox) and per-host-step tokens; `FACTORY_PAT` retired.
 - Agents under `bwrap()` on pinned `ubuntu-24.04`, with `persist-credentials: false`, no secret on the launching host step, and the credential relay.
-- The push step's scans (secrets, workflow changes).
-- `budget.yml`: credential, models, caps, priority, ceilings. The budget-pause ticket, `factory:queued`/`factory:paused`, the pre-run budget gates, and the requeue run (restarting queued and paused items, closing timed pauses).
+- The push step's scans (gitleaks, the Claude token's literal value, workflow changes).
+- `budget.yml` in [its settled shape](#budget): credential, models, caps, priority, per-task ceilings with the two time limits. The budget-pause ticket, `factory:queued`/`factory:paused`, the pre-run budget gates, and the requeue run (restarting queued and paused items, closing timed pauses).
+- Gate runs that start agent runs, run names carrying lock keys, and locks that queue instead of dropping.
+- The three-clocks rule: the requeue run is the only clock Foundation builds; the watch and weekly clocks arrive with the Trust ladder.
 - Thin entry files plus reusable workflows, the `@stable`/`@main` split, run-start pinning, and dated `stable` releases.
 - Run summaries on every run, and the README's saved search links and link to the latest requeue run.
 
-**Revises in v0:** all four v0 tasks (explore, implement, implement-spec, review) move onto this base. `FACTORY_PAT` gives way to App tokens; the unsandboxed agent moves into `bwrap()`; the hard-coded model pins (`claude-opus-4-6` in `.sandcastle/main.ts`, `interactive.ts`, `test.ts`; `claude-opus-5-5` in `shared/common.ts`) give way to `budget.yml`; each workflow splits into an entry file and a reusable workflow.
+**Revises in v0:** all four v0 tasks (explore, implement, implement-spec, review) move onto this base. `FACTORY_PAT` gives way to App tokens; the unsandboxed agent moves into `bwrap()`; the hard-coded model pins (`claude-opus-4-6` in `.sandcastle/main.ts`, `interactive.ts`, `test.ts`; `claude-opus-5-5` in `shared/common.ts`) give way to `budget.yml`, read only by `shared/common.ts`; each workflow splits into an entry file and a reusable workflow. The Sandcastle starter leftovers (`.sandcastle/main.ts`, `test.ts`, `interactive.ts`, `prompt.md`), which no workflow uses, are deleted. Implement-spec loses its 15-minute clock and its self-start chain now, because a run with no label can't be queued or restarted: until the PR loop, each `agent:implement-spec` label builds the queue's next ready ticket. (Foundation session)
 
 **Still works when it lands:** v0's four tasks run on the factory repo itself, label-triggered as before, with drafts and a human merging every PR, now sandboxed, budgeted and released through `stable`.
 
@@ -511,20 +551,20 @@ The destination: "every service slot names a product and every task and ticket s
 
 | Task | 1 Trigger | 2 Does | 3 Next | 4 Human | 5 No double | Gaps |
 |---|---|---|---|---|---|---|
-| Register | ✓ | ✓ | ✓ | ✓ | ✓ | G1 |
-| Map | ✓ | ✓ | ✓ | ✓ | ✓ | G1 |
-| Move | ✓ | ✓ | ✓ | ✓ | ✓ | G1 |
-| Explore | ✓ | ✓ | ✓ | ✓ | ✓ | G1 |
+| Register | ✓ | ✓ | ✓ | ✓ | ✓ | — |
+| Map | ✓ | ✓ | ✓ | ✓ | ✓ | — |
+| Move | ✓ | ✓ | ✓ | ✓ | ✓ | — |
+| Explore | ✓ | ✓ | ✓ | ✓ | ✓ | — |
 | Implement | ✓ | ✓ | ✓ | ✓ | ✓ | G3 |
 | Implement-spec | ✓ | ✓ | ✓ | ✓ | ✓ | G8 |
-| Review | ✓ | ✓ | ✓ | ✓ | ✓ | G1 |
-| Fix-CI | ✓ | ✓ | ✓ | ✓ | ✓ | G1, G11 |
-| Address-review | ✓ | ✓ | ✓ | ✓ | ✓ | G1 |
-| Merge | ✓ | ✓ | ✓ | ✓ | ✓ | G1 |
-| Watch | ✓ | ✓ | ✓ | ✓ | ✓ | G4 |
-| Lesson-draft run | ✓ | partial | ✓ | ✓ | ✓ | G6 |
-| Requeue run | ✓ | ✓ | ✓ | ✓ | ✓ | G9 |
-| Weekly self-improvement | ✓ | partial | ✓ | ✓ | ✓ | G5, G6 |
+| Review | ✓ | ✓ | ✓ | ✓ | ✓ | — |
+| Fix-CI | ✓ | ✓ | ✓ | ✓ | ✓ | G11 |
+| Address-review | ✓ | ✓ | ✓ | ✓ | ✓ | — |
+| Merge | ✓ | ✓ | ✓ | ✓ | ✓ | — |
+| Watch | ✓ | ✓ | ✓ | ✓ | ✓ | — |
+| Lesson-draft run | ✓ | ✓ | ✓ | ✓ | ✓ | — |
+| Requeue run | ✓ | ✓ | ✓ | ✓ | ✓ | — |
+| Weekly self-improvement | ✓ | ✓ | ✓ | ✓ | ✓ | G5 |
 | Upstream flow (variants) | ✓ | ✓ | ✓ | ✓ | ✓ | G10 |
 | Ticket sources | none | — | — | — | n/a | — |
 
@@ -532,22 +572,18 @@ Every slot names a product, and every task has an answer to every question. Thos
 
 ## Gaps
 
-Contradictions between tickets, and questions no ticket answered. Nothing here is filled in by this digest.
+Contradictions between tickets, and questions no ticket answered. Nothing here is filled in by this digest. Settled gaps move into the rules or the task answers and are deleted here; their numbers are not reused (G1, G4, G6 and G9 were settled in the Foundation session).
 
 ### Contradictions
 
-- **G1. Locks that "never cancel" can't be Actions `concurrency` groups.** [Budget] rejects `concurrency:` groups for caps because "they keep only one waiting run and cancel the rest", and [Requeue run] relies on exactly that. Yet [Register/map/move], [Review], [Fix-CI and address-review] and [Explore] describe per-repo, per-PR and per-ticket locks as Actions `concurrency` groups where runs "queue behind it and are never cancelled". A third run on the same lock would be dropped, leaving its label on with nothing running. *Decide:* accept the drop (and have the requeue run or the dropped run's label recover it), or build a lock that queues. **Owner:** Foundation.
 - **G2. How the shim starts the factory.** [Cross-repo Actions] (and the map's gist of it) says the shim sends `repository_dispatch`, which needs **Contents: write** on the factory. [Security model] and [Registration] give the shim token **Actions: write** only, which can start a `workflow_dispatch` and not a `repository_dispatch`. *Decide:* `workflow_dispatch` to the entry files (fits the token) or `repository_dispatch` (widens the token). **Owner:** Targets.
 - **G3. A ceiling hit's draft PR vs one open PR per ticket.** [Budget] says a run that hits its ceiling "pushes its work as a draft, comments, and counts as a failed try". [Implement] says a retry after a ceiling hit goes "on a new branch", but also that a run finding an open factory PR for the ticket stops. Unanswered: does the ceiling-hit draft get `factory/checks` and go to review; does the user have to close it before a retry can run; does it count on the trust ladder if closed? **Owner:** PR loop.
-- **G4. How many clocks.** [Requeue run] is summarised on the map as "the only clock", and [Ticket sources] says every chain starts from a person's label or "the requeue run's clock". But the watch has its own daily clock ([Merge and watch]), whose lesson tickets start lesson-draft runs, and the self-improvement run has a weekly one ([Self-improvement]). *Decide:* restate the rule as "a person's label or one of the factory's clocks (requeue hourly, watch daily, self-improvement weekly)", or fold the other clocks into the requeue run. **Owner:** Foundation (the rule), Trust ladder (the clocks).
 
 ### Missing answers
 
 - **G5. Building a self-improvement ticket.** Its tickets live in the companion ([Private maps]), and it is built by `agent:implement` ([Self-improvement]), but implement builds "a ticket in the target repo" ([Implement]) and its PR "Closes" that ticket. A PR on the public factory can't close, or should even name, a private companion ticket. Also unsaid: where the push scan gets the private target names it must look for ([Private maps]) without the public factory holding them in plain sight. **Owner:** Trust ladder.
-- **G6. Budget settings for the two extra runs.** The lesson-draft run is named Sonnet ([Merge and watch]) but has no ceiling and no place in the priority order. The weekly self-improvement run has no model, ceiling or priority, and no ticket says whether it is an agent run at all (finding patterns suggests it is). Also unsaid: whether no-agent runs (register, move, merge, watch, requeue) count toward the daily cap; [Merge and watch] says only that merge doesn't. **Owner:** Trust ladder (the runs), Foundation (`budget.yml`'s shape).
 - **G7. Where the drift check lands.** [Spec handoff] puts "re-map and stale maps" in phase 2 (Targets), but the drift check runs inside the daily watch ([Map freshness], [Merge and watch]), built in phase 4. *Decide:* phase 2 builds a standalone daily drift check that phase 4 folds into the watch, or drift detection moves to phase 4 (phase 2 then has only reported contradictions). **Owner:** Targets.
 - **G8. Spec-queue details.** [Implement] has implement-spec "mark the spec live" with a label that is never named, and doesn't say how a queue ticket records its dependencies (GitHub's native "blocked by", or v0's own scheme). **Owner:** PR loop.
-- **G9. The factory reaching into the companion.** The requeue run counts the companion's runs, reads its "I have waiting items" variable and starts its requeue run ([Requeue run]), and runs file move tickets there ([Registration]). That needs the App installed on the companion with Actions and Variables permissions; no ticket lists the App's full permission set. Collected from the tickets, it is: Issues, Contents, Pull requests and Actions read/write (as [Cross-repo Actions] lists them); **Checks: write** for `factory/checks` (implied by [Implement]); **Variables: read** on the companion (implied by [Requeue run]); never Workflows or Administration. *Confirm the list.* Also unsaid: whether a companion run finishing triggers the factory's requeue run, as "whenever any factory run finishes" may or may not include it. **Owner:** Foundation.
 - **G10. No fork yet.** [Registration] says the user forks by hand and installs the App when there's no fork, but not what the run does meanwhile (presumably a checklist comment, `factory:needs-human`, and the user re-adds `agent:upstream`). **Owner:** Upstream.
 - **G11. Fix-CI's triage on a merge conflict.** [Merge and watch] sends conflicts to fix-CI as a try, but fix-CI's triage ([Fix-CI and address-review]) re-runs failing checks, and a conflict has none. *Decide:* whether triage is skipped for conflicts. **Owner:** Trust ladder.
 
@@ -571,6 +607,8 @@ Carried from the map; each returns only as a fresh effort.
 ## Sources
 
 Every ticket below is closed, with its resolution comment and any amendments on the issue. Research findings live on the linked `research/*` branches.
+
+**Foundation session** is the spec session of 2026-11-20 that settled G1, G4, G6 and G9 before Foundation's `/to-spec`; its decisions are recorded in this file by the PR that made them.
 
 | Short name | Ticket |
 |---|---|
