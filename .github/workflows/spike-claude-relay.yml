@@ -84,6 +84,8 @@ jobs:
             [ -f "$f" ] && echo "exact token in $f: $(grep -cF -- "$TOKEN" "$f")"
           done
           echo "exact token in .sandcastle/logs: $(grep -rlF -- "$TOKEN" .sandcastle/logs 2>/dev/null | wc -l)"
+          echo "--- relay log"; cat /tmp/relay.log
+          echo "--- host listeners (what the sandbox's port scan found)"; sudo ss -ltnp
 
       - name: Summary
         if: always()

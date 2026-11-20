@@ -37,8 +37,11 @@ for p in /proc/[0-9]*; do
 done
 echo "proc scan done"
 
-hits=$(timeout 240 grep -rIlE --exclude-dir=proc --exclude-dir=sys --exclude-dir=dev "$TOKEN_RE" / 2>/dev/null)
-echo "filesystem token-shaped files (grep exit $?): ${hits:-none}"
+# /usr and /opt are the runner image, read-only; a full sweep of them times out.
+roots=$(ls -d /* | grep -vE '^/(proc|sys|dev|usr|opt)$' | tr '
+' ' ')
+hits=$(timeout 240 grep -rIlE "$TOKEN_RE" $roots 2>/dev/null)
+echo "filesystem token-shaped files under $roots(grep exit $?): ${hits:-none}"
 
 echo "--- relay probes against $relay"
 probe() { # label, curl args...
@@ -64,5 +67,6 @@ probe "CONNECT via relay" --proxytunnel --proxy "$relay" https://example.com/
 
 echo "--- host reachability"
 node "$here/scan.mjs"
+echo "IMDS managed identity token: $(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -H 'Metadata: true' 'http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/' 2>&1)"
 echo "IMDS direct: $(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -H 'Metadata: true' 'http://169.254.169.254/metadata/instance?api-version=2021-02-01' 2>&1)"
 echo "egress example.com: $(curl -s -o /dev/null -w '%{http_code}' --max-time 5 https://example.com 2>&1)"
