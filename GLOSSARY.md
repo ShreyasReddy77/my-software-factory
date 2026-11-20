@@ -60,6 +60,14 @@ _Avoid_: rung, level, tier
 A category of change a PR makes (such as documentation or a new feature) that earns trust on its own. A failure in one change kind never costs another its step.
 _Avoid_: change type, PR type, category
 
+**Bad PR**:
+A factory PR that showed a sign it should not have shipped as it was: reverted soon after merging, broke the default branch, needed a human's commits or requested changes, or was closed unmerged. One bad PR demotes its change kind. A PR with no such sign is good.
+_Avoid_: failed PR, rejected PR
+
+**Watch**:
+The factory's daily look back over its recent PRs on each target repo, to find bad PRs, demote, file lesson tickets and propose promotions. It uses no model.
+_Avoid_: monitor, audit, post-merge check
+
 **Lesson ticket**:
 A ticket the factory files after one of its PRs goes bad, proposing one new check or ICM map note so the mistake does not repeat. Nothing changes until a human approves it.
 _Avoid_: postmortem, retro, incident
