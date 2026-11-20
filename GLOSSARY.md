@@ -88,6 +88,10 @@ _Avoid_: outage, freeze, cooldown
 One run in a loop that counts towards that loop's cap, after which a human takes over. A run that crashes, hits its ceiling or fails its push is a failed try. A run that stops on purpose with a reason, or that never reaches the agent because the fault wasn't the change's, is not a try.
 _Avoid_: attempt, retry (a retry is a human choosing to give it another go)
 
+**Requeue run**:
+The factory's scheduler: the one run that restarts queued and paused work when budget frees up, finishing work before starting it, and moves live spec queues forward. It never restarts work a human has to look at first.
+_Avoid_: scheduler, cron, retry run
+
 **Ceiling**:
 The most turns and time a single run of a task may spend. A run that reaches it stops and counts as a failed try.
 _Avoid_: timeout, cap (the cap counts runs, the ceiling bounds one run)
