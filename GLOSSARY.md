@@ -12,6 +12,10 @@ _Avoid_: factory kit, template, per-repo install
 The act of adding a target repo to the factory, after which runs may work on it.
 _Avoid_: install, onboarding, enrolment
 
+**Stable**:
+The version of the factory's scripts and prompts that most target repos run. The user moves it forward by hand, once a change has proven itself on the test repos.
+_Avoid_: release, production, latest
+
 **Target repo**:
 Any GitHub-hosted repository, in any language, that the factory works on.
 _Avoid_: client repo, codebase, project
@@ -35,6 +39,10 @@ _Avoid_: agent workflow, installer, webhook
 **Trusted author**:
 Someone with write access to the target repo, or the factory itself. Only trusted authors' words reach an agent. On an upstream repo, the maintainers' review comments are also read, but only the ones present when the user started the round.
 _Avoid_: collaborator, maintainer, allowed user
+
+**Test repo**:
+An owned repo the user picks to run the factory's newest, not-yet-stable scripts and prompts, so a bad factory change hurts it alone.
+_Avoid_: canary, staging repo, beta repo
 
 **Trust ladder**:
 The sequence of steps that loosens human review as measured PR quality earns it, ending in auto-merge for the change kinds that qualify. Each owned repo climbs it separately for each change kind. Applies only to owned repos.
