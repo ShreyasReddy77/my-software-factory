@@ -107,3 +107,7 @@ _Avoid_: review result, approval (approving is a human's act)
 **Ready branch**:
 Where upstream work ends for the factory: a branch on the user's fork that passes the repo's checks, follows its policy verdict's requirements, and comes with a draft PR body. The user opens the PR and speaks for it upstream; the factory never posts there.
 _Avoid_: upstream PR, draft PR, handoff branch
+
+**Run summary**:
+The short card every run leaves at the top of its run page: what it worked on, how it ended and what it started next. The requeue run's card also shows how much of today's budget is used. A run's full story is its log; the summary is what a human reads first.
+_Avoid_: report, dashboard, status
