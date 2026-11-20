@@ -76,6 +76,14 @@ _Avoid_: postmortem, retro, incident
 An ICM workspace describing one target repo (its structure, checks, standards and hazards) that every run reads first to find its way around.
 _Avoid_: context file, repo docs, index
 
+**Mapped-at commit**:
+The target repo's commit an ICM map was last checked against. Only a re-map moves it; small edits to the map leave it alone.
+_Avoid_: map version, last updated
+
+**Stale map**:
+An ICM map the code has probably moved past: a run found it wrong, something it names is gone, the checks may have changed, or the repo has moved far beyond its mapped-at commit. A stale map never stops a run, since code beats the map; it only asks a human whether to re-map.
+_Avoid_: outdated map, broken map
+
 **Budget**:
 How much Claude usage the factory may spend, set once for the whole factory and shared by every target repo: which plan or key pays, how many runs it starts, and which tasks go first when usage is short.
 _Avoid_: quota, allowance, rate limit (the plan's own limit is what the budget is sized against, not the budget)
