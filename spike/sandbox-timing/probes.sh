@@ -14,3 +14,8 @@ echo "egress api.github.com: $(curl -s -o /dev/null -w '%{http_code}' --max-time
 echo "egress example.com: $(curl -s -o /dev/null -w '%{http_code}' --max-time 5 https://example.com 2>&1)"
 echo "docker socket: $(ls -la /var/run/docker.sock 2>&1)"
 echo "sudo: $(sudo -n true 2>&1 && echo yes || echo no)"
+for p in /proc/[0-9]*; do
+  names=$(tr '\0' '\n' < "$p/environ" 2>/dev/null | grep -iE 'token|secret' | cut -d= -f1 | tr '\n' ' ')
+  [ -n "$names" ] && echo "token-like env of pid ${p#/proc/} ($(tr '\0' ' ' < "$p/cmdline" | cut -c1-60)): $names"
+done
+echo "GH_TOKEN readable from /proc/1: $(tr '\0' '\n' < /proc/1/environ 2>/dev/null | grep -c '^GH_TOKEN=gh')"
