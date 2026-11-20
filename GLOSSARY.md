@@ -37,7 +37,7 @@ Merged to the target repo's default branch. Deployment belongs to the target rep
 _Avoid_: deployed, released, in production
 
 **Shim**:
-The one small workflow an owned repo carries, which only tells the factory that a label was applied there. The factory never believes it: it checks the label for itself before any run.
+The one small workflow an owned repo carries, which only tells the factory that something happened there: a label was applied, or, on the factory's own branches, the repo's CI finished or a human approved. The factory never believes it: it checks for itself before any run.
 _Avoid_: agent workflow, installer, webhook
 
 **Trusted author**:
