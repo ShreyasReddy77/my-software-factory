@@ -28,6 +28,14 @@ _Avoid_: OSS repo, external repo, third-party repo
 Merged to the target repo's default branch. Deployment belongs to the target repo's own pipeline, not the factory.
 _Avoid_: deployed, released, in production
 
+**Shim**:
+The one small workflow an owned repo carries, which only tells the factory that a label was applied there. The factory never believes it: it checks the label for itself before any run.
+_Avoid_: agent workflow, installer, webhook
+
+**Trusted author**:
+Someone with write access to the target repo, or the factory itself. Only trusted authors' words reach an agent. On an upstream repo, the maintainers' review comments are also read, but only the ones present when the user started the round.
+_Avoid_: collaborator, maintainer, allowed user
+
 **Trust ladder**:
 The sequence of steps that loosens human review as measured PR quality earns it, ending in auto-merge for the change kinds that qualify. Each owned repo climbs it separately for each change kind. Applies only to owned repos.
 _Avoid_: autonomy level, maturity model
