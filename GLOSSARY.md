@@ -76,6 +76,10 @@ _Avoid_: quota, allowance, rate limit (the plan's own limit is what the budget i
 The factory-wide state in which no run calls Claude, because a usage limit was hit or credit ran out. It is visible as one open ticket, and while it is open, runs pause their work instead of starting it.
 _Avoid_: outage, freeze, cooldown
 
+**Try**:
+One run in a loop that counts towards that loop's cap, after which a human takes over. A run that crashes, hits its ceiling or fails its push is a failed try. A run that stops on purpose with a reason, or that never reaches the agent because the fault wasn't the change's, is not a try.
+_Avoid_: attempt, retry (a retry is a human choosing to give it another go)
+
 **Ceiling**:
 The most turns and time a single run of a task may spend. A run that reaches it stops and counts as a failed try.
 _Avoid_: timeout, cap (the cap counts runs, the ceiling bounds one run)
