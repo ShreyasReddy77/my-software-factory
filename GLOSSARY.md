@@ -59,3 +59,11 @@ _Avoid_: outage, freeze, cooldown
 **Ceiling**:
 The most turns and time a single run of a task may spend. A run that reaches it stops and counts as a failed try.
 _Avoid_: timeout, cap (the cap counts runs, the ceiling bounds one run)
+
+**Policy verdict**:
+What the factory concludes about an upstream repo's rules for AI contributions: ban (refused, no override), disclose, allow, or unknown (the user decides). Reached afresh on every upstream run, because policies change.
+_Avoid_: AI policy, compliance status, allowlist
+
+**Ready branch**:
+Where upstream work ends for the factory: a branch on the user's fork that passes the repo's checks, follows its policy verdict's requirements, and comes with a draft PR body. The user opens the PR and speaks for it upstream; the factory never posts there.
+_Avoid_: upstream PR, draft PR, handoff branch
