@@ -85,8 +85,16 @@ An ICM map the code has probably moved past: a run found it wrong, something it 
 _Avoid_: outdated map, broken map
 
 **Budget**:
-How much Claude usage the factory may spend, set once for the whole factory and shared by every target repo: which plan or key pays, how many runs it starts, and which tasks go first when usage is short.
+How much Claude usage the factory may spend, set once for the whole factory and shared by every target repo: which plan or key pays, how many agent runs it starts, and which tasks go first when usage is short.
 _Avoid_: quota, allowance, rate limit (the plan's own limit is what the budget is sized against, not the budget)
+
+**Agent run**:
+A run that calls Claude. Only agent runs spend budget and count towards the daily cap; a run that only checks, counts, labels or merges is not one.
+_Avoid_: AI run, Claude run, job
+
+**Lock**:
+The rule that only one run works on a given thing (a ticket, a PR, or a target repo's registration and map) at a time. A run that finds the thing taken queues itself to be restarted later, rather than waiting in line, so no run is ever lost.
+_Avoid_: mutex, concurrency group (the orchestrator's own line, which drops waiting runs)
 
 **Budget pause**:
 The factory-wide state in which no run calls Claude, because a usage limit was hit or credit ran out. It is visible as one open ticket, and while it is open, runs pause their work instead of starting it.
@@ -97,7 +105,7 @@ One run in a loop that counts towards that loop's cap, after which a human takes
 _Avoid_: attempt, retry (a retry is a human choosing to give it another go)
 
 **Requeue run**:
-The factory's scheduler: the one run that restarts queued and paused work when budget frees up, finishing work before starting it, and moves live spec queues forward. It never restarts work a human has to look at first.
+The factory's scheduler: the one run that restarts queued and paused work when budget or a lock frees up, finishing work before starting it, and moves live spec queues forward. It never restarts work a human has to look at first.
 _Avoid_: scheduler, cron, retry run
 
 **Ceiling**:
