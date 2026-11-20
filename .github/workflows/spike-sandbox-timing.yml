@@ -1,0 +1,109 @@
+name: Spike — Measure Sandcastle sandboxes
+
+# Throwaway spike for the ticket "Measure Sandcastle sandboxes on a hosted
+# Actions runner". Lives only on research/sandbox-timing, which is never
+# merged. Re-run it to measure a warm docker build cache.
+#
+# The worst case is deliberate: the checkout keeps its credential in
+# .git/config (persist-credentials defaults to true), and the step that runs
+# the sandbox holds GH_TOKEN in its own environment. The probes report
+# whether either reaches the sandbox.
+
+on:
+  push:
+    branches: [research/sandbox-timing]
+
+permissions:
+  contents: write # the host step pushes the sandbox's commit
+
+jobs:
+  measure:
+    strategy:
+      fail-fast: false
+      matrix:
+        sandbox: [bwrap, docker]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Job start
+        run: echo "JOB_START=$(date +%s%3N)" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install spike dependencies
+        run: |
+          t=$(date +%s%3N)
+          npm install --prefix spike/sandbox-timing --no-audit --no-fund
+          echo "npm_install_ms=$(( $(date +%s%3N) - t ))" >> /tmp/timings.txt
+
+      - name: Set up bwrap
+        if: matrix.sandbox == 'bwrap'
+        run: |
+          t=$(date +%s%3N)
+          sudo apt-get install -y bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          echo "sandbox_setup_ms=$(( $(date +%s%3N) - t ))" >> /tmp/timings.txt
+          bwrap --version
+
+      - name: Mark docker build start
+        if: matrix.sandbox == 'docker'
+        run: echo "BUILD_START=$(date +%s%3N)" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+        if: matrix.sandbox == 'docker'
+
+      - name: Build the sandbox image
+        if: matrix.sandbox == 'docker'
+        uses: docker/build-push-action@v6
+        with:
+          context: .sandcastle
+          load: true
+          tags: sandcastle:spike
+          build-args: |
+            AGENT_UID=1001
+            AGENT_GID=118
+          cache-from: type=gha,scope=sandcastle-spike
+          cache-to: type=gha,mode=max,scope=sandcastle-spike
+
+      - name: Mark docker build end
+        if: matrix.sandbox == 'docker'
+        run: |
+          echo "sandbox_setup_ms=$(( $(date +%s%3N) - BUILD_START ))" >> /tmp/timings.txt
+          echo "runner uid=$(id -u) gid=$(id -g)"
+          docker image ls sandcastle:spike
+
+      - name: Measure
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "spike[bot]"
+          git config user.email "spike[bot]@users.noreply.github.com"
+          npx --prefix spike/sandbox-timing tsx spike/sandbox-timing/measure.ts ${{ matrix.sandbox }}
+
+      - name: Host pushes the sandbox's commit
+        run: |
+          set -euo pipefail
+          branch=$(jq -r .branch_to_push /tmp/result-${{ matrix.sandbox }}.json)
+          git log --oneline -2 "$branch"
+          t=$(date +%s%3N)
+          git push origin "$branch:refs/heads/$branch"
+          echo "host_push_ms=$(( $(date +%s%3N) - t ))" >> /tmp/timings.txt
+          git ls-remote origin "refs/heads/$branch"
+          git push origin --delete "$branch"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "job_total_ms=$(( $(date +%s%3N) - JOB_START ))" >> /tmp/timings.txt
+          {
+            echo "## ${{ matrix.sandbox }} (attempt ${{ github.run_attempt }})"
+            echo '```'
+            cat /tmp/timings.txt
+            cat /tmp/result-${{ matrix.sandbox }}.json 2>/dev/null || echo "no result"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat /tmp/timings.txt
