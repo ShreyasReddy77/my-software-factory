@@ -1,0 +1,100 @@
+name: Spike — Claude credential relay
+
+# Throwaway spike for the ticket "Test a Claude credential relay outside the
+# bwrap sandbox". Lives only on research/claude-relay, which is never merged.
+#
+# An earlier step starts the relay with the real token on its stdin. The step
+# that runs Sandcastle holds no credential at all; Claude Code inside bwrap()
+# gets a stand-in token and ANTHROPIC_BASE_URL. Without the repo secret, the
+# relay holds a token-shaped canary instead, so the leak probes still mean
+# something but the agent run fails with a 401.
+#
+# Secrets (optional; either may be absent):
+#   CLAUDE_CODE_OAUTH_TOKEN — from `claude setup-token`, for oauth-env and auth-token
+#   ANTHROPIC_API_KEY       — for api-key
+
+on:
+  push:
+    branches: [research/claude-relay]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  relay:
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [oauth-env, auth-token, api-key]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      RELAY_MODE: ${{ matrix.variant == 'api-key' && 'apikey' || 'oauth' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install spike dependencies and Claude Code
+        run: |
+          npm install --prefix spike/claude-relay --no-audit --no-fund
+          t=$(date +%s%3N)
+          npm install -g @anthropic-ai/claude-code --no-audit --no-fund
+          echo "claude_install_ms=$(( $(date +%s%3N) - t ))" >> /tmp/timings.txt
+          claude --version
+
+      - name: Set up bwrap
+        run: |
+          t=$(date +%s%3N)
+          sudo apt-get install -y bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          echo "bwrap_setup_ms=$(( $(date +%s%3N) - t ))" >> /tmp/timings.txt
+
+      - name: Start the relay (holds the real token)
+        env:
+          TOKEN: ${{ (matrix.variant == 'api-key' && secrets.ANTHROPIC_API_KEY) || (matrix.variant != 'api-key' && secrets.CLAUDE_CODE_OAUTH_TOKEN) || format('sk-ant-oat01-CANARY{0}abcdefghijklmnopqrstuvwxyz', github.run_id) }}
+        run: |
+          case "$TOKEN" in *CANARY*) echo "real_token=false" ;; *) echo "real_token=true" ;; esac | tee -a /tmp/timings.txt
+          t=$(date +%s%3N)
+          # env -u: the token reaches the relay on stdin only, never its environ.
+          printf %s "$TOKEN" | env -u TOKEN nohup node spike/claude-relay/relay.mjs "$RELAY_MODE" 8787 > /tmp/relay.log 2>&1 &
+          for _ in $(seq 100); do grep -q ready /tmp/relay.log && break; sleep 0.05; done
+          echo "relay_start_ms=$(( $(date +%s%3N) - t ))" >> /tmp/timings.txt
+          cat /tmp/relay.log
+          echo "relay environ holds TOKEN: $(sudo cat /proc/$(pgrep -f "node spike/claude-relay/relay.mjs" | head -1)/environ | tr '\0' '\n' | grep -c '^TOKEN=')"
+
+      - name: Run Claude Code in bwrap() through the relay (no credential here)
+        run: |
+          echo "credential-like env names in this step: $(env | grep -iE "token|secret|api_key" | cut -d= -f1 | tr '\n' ' ')"
+          git config user.name "spike[bot]"
+          git config user.email "spike[bot]@users.noreply.github.com"
+          npx --prefix spike/claude-relay tsx spike/claude-relay/run.ts ${{ matrix.variant }}
+
+      - name: Search everything the sandbox saw for the exact real token
+        if: always()
+        env:
+          TOKEN: ${{ (matrix.variant == 'api-key' && secrets.ANTHROPIC_API_KEY) || (matrix.variant != 'api-key' && secrets.CLAUDE_CODE_OAUTH_TOKEN) || format('sk-ant-oat01-CANARY{0}abcdefghijklmnopqrstuvwxyz', github.run_id) }}
+        run: |
+          for f in /tmp/relay-dump-* /tmp/result-*.json /tmp/relay.log; do
+            [ -f "$f" ] && echo "exact token in $f: $(grep -cF -- "$TOKEN" "$f")"
+          done
+          echo "exact token in .sandcastle/logs: $(grep -rlF -- "$TOKEN" .sandcastle/logs 2>/dev/null | wc -l)"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## ${{ matrix.variant }} (attempt ${{ github.run_attempt }})"
+            echo '```'
+            cat /tmp/timings.txt
+            echo "--- relay log"
+            cat /tmp/relay.log
+            echo "--- result"
+            cat /tmp/result-${{ matrix.variant }}.json 2>/dev/null || echo "no result"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
