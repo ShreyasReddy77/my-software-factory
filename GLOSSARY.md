@@ -112,6 +112,10 @@ _Avoid_: attempt, retry (a retry is a human choosing to give it another go)
 The factory's scheduler: the one run that restarts queued and paused work when budget or a lock frees up, finishing work before starting it, and moves live spec queues forward. It never restarts work a human has to look at first.
 _Avoid_: scheduler, cron, retry run
 
+**Waiting item**:
+A ticket or PR labelled `factory:queued` or `factory:paused`: work a run could not start for lack of budget, a lock or Claude itself, which the requeue run restarts. Taking the label off cancels it.
+_Avoid_: backlog, pending item
+
 **Ceiling**:
 The most turns and time a single run of a task may spend. A run that reaches it stops and counts as a failed try.
 _Avoid_: timeout, cap (the cap counts runs, the ceiling bounds one run)
