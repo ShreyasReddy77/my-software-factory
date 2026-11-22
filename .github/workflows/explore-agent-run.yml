@@ -1,0 +1,235 @@
+name: Explore — agent run jobs
+
+# Called by explore-agent.yml at @stable or @main. agent-explore.yml's header
+# is the operator's manual for the whole task; this file is its agent run's jobs.
+
+on:
+  workflow_call:
+    inputs:
+      factory_sha:
+        type: string
+        required: true
+      batch:
+        type: string
+        required: true
+      job_timeout:
+        type: string
+        required: true
+    secrets:
+      FACTORY_APP_PRIVATE_KEY:
+        required: true
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  FACTORY_REPO: ShreyasReddy77/my-software-factory
+  TARGET_REPO: ${{ github.repository }}
+  BATCH: ${{ inputs.batch }}
+  RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+jobs:
+  explore:
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ fromJSON(inputs.job_timeout) }}
+    outputs:
+      plan: ${{ steps.hand-on.outputs.plan }}
+      agent-end: ${{ steps.hand-on.outputs.agent-end }}
+      started-at: ${{ steps.folders.outputs.started-at }}
+    steps:
+      - name: Prepare the run's folders
+        id: folders
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/agent-io" "$RUNNER_TEMP/output"
+          echo "started-at=$(date +%s)" >> "$GITHUB_OUTPUT"
+          {
+            echo "AGENT_IO_DIR=$RUNNER_TEMP/agent-io"
+            echo "OUTPUT_DIR=$RUNNER_TEMP/output"
+          } >> "$GITHUB_ENV"
+
+      - name: Check out the factory at the pinned commit
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.FACTORY_REPO }}
+          ref: ${{ inputs.factory_sha }}
+          path: factory
+          persist-credentials: false
+
+      - name: Read budget.yml from main
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.FACTORY_REPO }}
+          ref: main
+          path: settings
+          sparse-checkout: budget.yml
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Use main's budget.yml
+        run: cp settings/budget.yml factory/budget.yml
+
+      - name: Check out the target repo
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: target
+          persist-credentials: false
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: factory/.sandcastle/package-lock.json
+
+      - name: Install the factory's dependencies
+        run: npm ci --prefix factory/.sandcastle
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Install Bubblewrap
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          bwrap --ro-bind / / true
+
+      - name: Mint the batch reader's token
+        id: read-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-issues: read
+
+      - name: Read the batch
+        env:
+          GH_TOKEN: ${{ steps.read-token.outputs.token }}
+          FACTORY_APP_SLUG: ${{ steps.read-token.outputs.app-slug }}
+        run: factory/.sandcastle/node_modules/.bin/tsx factory/.sandcastle/agent-workflows/explore/read-batch.ts
+
+      - name: Start the credential relay
+        env:
+          CLAUDE_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: factory/.sandcastle/agent-workflows/shared/start-relay.sh
+
+      - name: Explore
+        working-directory: target
+        run: ../factory/.sandcastle/node_modules/.bin/tsx ../factory/.sandcastle/agent-workflows/explore/explore.ts
+
+      - name: Hand the plan to the apply job
+        id: hand-on
+        run: |
+          set -euo pipefail
+          for name in plan agent-end; do
+            delimiter="EOF_$(openssl rand -hex 16)"
+            {
+              echo "$name<<$delimiter"
+              if [ -s "$OUTPUT_DIR/$name.json" ]; then jq -c . "$OUTPUT_DIR/$name.json"; fi
+              echo "$delimiter"
+            } >> "$GITHUB_OUTPUT"
+          done
+
+  apply:
+    needs: explore
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the factory at the pinned commit
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.FACTORY_REPO }}
+          ref: ${{ inputs.factory_sha }}
+          path: factory
+          persist-credentials: false
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: factory/.sandcastle/package-lock.json
+
+      - name: Install the factory's dependencies
+        run: npm ci --prefix factory/.sandcastle
+
+      - name: Mint the apply job's token
+        id: token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-issues: write
+
+      - name: Check and apply the plan
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          PLAN: ${{ needs.explore.outputs.plan }}
+        run: factory/.sandcastle/node_modules/.bin/tsx factory/.sandcastle/agent-workflows/explore/apply.ts
+
+  finish:
+    needs: [explore, apply]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the factory at the pinned commit
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.FACTORY_REPO }}
+          ref: ${{ inputs.factory_sha }}
+          path: factory
+          persist-credentials: false
+
+      - name: Read budget.yml from main
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.FACTORY_REPO }}
+          ref: main
+          path: settings
+          sparse-checkout: budget.yml
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Use main's budget.yml
+        run: cp settings/budget.yml factory/budget.yml
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: factory/.sandcastle/package-lock.json
+
+      - name: Install the factory's dependencies
+        run: npm ci --prefix factory/.sandcastle
+
+      - name: Mint the finisher's token
+        id: token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-issues: write
+
+      - name: Finish the batch and write the run summary
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          AGENT_END: ${{ needs.explore.outputs.agent-end }}
+          JOB_RESULTS: ${{ format('["{0}","{1}"]', needs.explore.result, needs.apply.result) }}
+          EXPLORE_STARTED_AT: ${{ needs.explore.outputs.started-at }}
+        run: |
+          set -euo pipefail
+          export STARTED_AT="${EXPLORE_STARTED_AT:-$(date +%s)}"
+          factory/.sandcastle/node_modules/.bin/tsx factory/.sandcastle/agent-workflows/explore/finish.ts

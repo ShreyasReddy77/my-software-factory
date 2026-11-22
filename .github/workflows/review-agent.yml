@@ -1,0 +1,50 @@
+name: Review — agent run
+
+# Started only by review's gate run, by workflow_dispatch. It holds only the
+# trigger, permissions, run name and a call: the job runs from
+# review-agent-run.yml at @stable or @main, at the commit the gate run pinned.
+# agent-review.yml's header is the operator's manual.
+
+on:
+  workflow_dispatch:
+    inputs:
+      factory_sha:
+        description: The factory commit the gate run pinned
+        type: string
+        required: true
+      pr:
+        description: The pull request's number
+        type: string
+        required: true
+      job_timeout:
+        description: review's agent_minutes plus 15
+        type: string
+        required: true
+
+run-name: "[pr ${{ github.repository }}#${{ inputs.pr }}] review"
+
+permissions:
+  contents: read
+
+jobs:
+  agent-stable:
+    if: github.repository != 'ShreyasReddy77/my-software-factory'
+    uses: ShreyasReddy77/my-software-factory/.github/workflows/review-agent-run.yml@stable
+    with:
+      factory_sha: ${{ inputs.factory_sha }}
+      pr: ${{ inputs.pr }}
+      job_timeout: ${{ inputs.job_timeout }}
+    secrets:
+      FACTORY_APP_PRIVATE_KEY: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+  agent-main:
+    if: github.repository == 'ShreyasReddy77/my-software-factory'
+    uses: ShreyasReddy77/my-software-factory/.github/workflows/review-agent-run.yml@main
+    with:
+      factory_sha: ${{ inputs.factory_sha }}
+      pr: ${{ inputs.pr }}
+      job_timeout: ${{ inputs.job_timeout }}
+    secrets:
+      FACTORY_APP_PRIVATE_KEY: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

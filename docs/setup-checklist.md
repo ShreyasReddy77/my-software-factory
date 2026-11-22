@@ -39,6 +39,7 @@ over when the README is written.
    gh label create "factory:queued" --color C5DEF5 --description "Waiting for a budget slot or a lock; the requeue run restarts it"
    gh label create "factory:paused" --color C5DEF5 --description "Waiting on a budget pause; the requeue run restarts it"
    gh label create "factory:needs-human" --color D93F0B --description "Stopped for a human, with a reason"
+   gh label create "needs-a-human" --color D93F0B --description "Explore stopped here for a human"
    gh label create "factory:ready-to-merge" --color 0E8A16 --description "Green and reviewed, waiting on the human"
    ```
 

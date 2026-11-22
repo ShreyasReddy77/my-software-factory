@@ -92,8 +92,12 @@ _Avoid_: quota, allowance, rate limit (the plan's own limit is what the budget i
 A run that calls Claude. Only agent runs spend budget and count towards the daily cap; a run that only checks, counts, labels or merges is not one.
 _Avoid_: AI run, Claude run, job
 
+**Explore batch**:
+Every open issue in a target repo that a trusted author labelled for exploring, worked together by one agent run so related tickets are grouped and duplicates closed. It holds the repo's lock and counts once against the daily cap.
+_Avoid_: queue, group (the agent's own clusters inside a batch)
+
 **Lock**:
-The rule that only one run works on a given thing (a ticket, a PR, or a target repo's registration and map) at a time. A run that finds the thing taken queues itself to be restarted later, rather than waiting in line, so no run is ever lost.
+The rule that only one run works on a given thing (a ticket, a PR, or a target repo's registration, map or explore batch) at a time. A run that finds the thing taken queues itself to be restarted later, rather than waiting in line, so no run is ever lost.
 _Avoid_: mutex, concurrency group (the orchestrator's own line, which drops waiting runs)
 
 **Budget pause**:
