@@ -114,8 +114,12 @@ on:
   #        there is. Do not stand in front of a camera waiting for :00.
   #      • GitHub disables scheduled workflows in a repository with no commits
   #        for sixty days, and emails the owner. A quiet repo stops on its own.
-  schedule:
-    - cron: "*/15 * * * *"
+  #
+  #    OFF IN THIS REPO. The factory repo is in design and has no spec queue
+  #    and no FACTORY_PAT secret, so every tick failed in `survey`. Uncomment
+  #    it in a target repo that has both.
+  # schedule:
+  #   - cron: "*/15 * * * *"
 
   # 3. The button, and the chain. `workflow_dispatch` is how a human starts it
   #    without labelling anything — and it is how the `chain` job at the bottom
