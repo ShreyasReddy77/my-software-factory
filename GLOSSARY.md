@@ -127,3 +127,15 @@ _Avoid_: upstream PR, draft PR, handoff branch
 **Run summary**:
 The short card every run leaves at the top of its run page: what it worked on, how it ended and what it started next. The requeue run's card also shows how much of today's budget is used. A run's full story is its log; the summary is what a human reads first.
 _Avoid_: report, dashboard, status
+
+**Run name**:
+The name every factory run carries on its run page, which says what task it is, which lock key it holds and whether it is an agent run (`[pr owner/repo#5] review`). Locks and budget counts are read from run names alone, so a run whose name doesn't parse holds no lock and spends no budget.
+_Avoid_: run title, job name
+
+**Lock key**:
+The thing a lock covers, written into a run name: a ticket, a PR, or a whole target repo.
+_Avoid_: concurrency key, mutex name
+
+**Marker**:
+A hidden comment the factory leaves on a waiting item, naming the trigger label it restarts as. Each release reads every marker form the previous release wrote.
+_Avoid_: tag, flag, state comment
