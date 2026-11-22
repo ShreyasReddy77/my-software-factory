@@ -1,0 +1,16 @@
+[
+  {
+    "actor": {
+      "id": 132871050,
+      "login": "ShreyasReddy77",
+      "type": "User"
+    },
+    "created_at": "2026-11-20T17:47:43Z",
+    "event": "labeled",
+    "id": 36796756769,
+    "label": {
+      "color": "0E8A16",
+      "name": "ready-for-agent"
+    }
+  }
+]

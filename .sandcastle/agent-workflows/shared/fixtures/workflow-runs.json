@@ -1,0 +1,27 @@
+{
+  "total_count": 138,
+  "workflow_runs": [
+    {
+      "conclusion": "failure",
+      "created_at": "2026-11-22T03:31:46Z",
+      "display_title": "Agent — Implement A Spec",
+      "event": "schedule",
+      "id": 44981050947,
+      "name": "Agent — Implement A Spec",
+      "path": ".github/workflows/agent-implement-spec.yml",
+      "run_attempt": 1,
+      "status": "completed"
+    },
+    {
+      "conclusion": "failure",
+      "created_at": "2026-11-21T23:43:33Z",
+      "display_title": "Agent — Implement A Spec",
+      "event": "schedule",
+      "id": 44963184067,
+      "name": "Agent — Implement A Spec",
+      "path": ".github/workflows/agent-implement-spec.yml",
+      "run_attempt": 1,
+      "status": "completed"
+    }
+  ]
+}
