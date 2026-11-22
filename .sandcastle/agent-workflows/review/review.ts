@@ -1,9 +1,8 @@
 import { execFileSync } from "node:child_process";
 import * as path from "node:path";
 import * as sandcastle from "@ai-hero/sandcastle";
-import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
 import type { z } from "zod/v4";
-import { claudeAgent, required, writeJson } from "../shared/common";
+import { sandboxedAgent, required, writeJson } from "../shared/common";
 import { extractionPrompt } from "../shared/extraction-prompt";
 import { runWithExtraction } from "../shared/run-with-extraction";
 import { diffLines } from "./diff-lines";
@@ -16,8 +15,7 @@ const BASE_REF = required("BASE_REF");
 // the inline comments, and marks the PR ready.
 const result = await runWithExtraction({
   name: "review",
-  agent: claudeAgent("review"),
-  sandbox: noSandbox(),
+  ...sandboxedAgent("review"),
   logging: { type: "stdout" },
   promptFile: path.join(import.meta.dirname, "prompt.md"),
   promptArgs: {
