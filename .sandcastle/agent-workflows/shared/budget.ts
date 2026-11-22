@@ -2,11 +2,11 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod/v4";
+import { credentials } from "./relay.mjs";
 import { agentTasks, type AgentTask } from "./tasks";
 
 export const budgetPath = path.join(import.meta.dirname, "../../../budget.yml");
 
-const credentials = ["subscription", "api-key"] as const;
 export type Credential = (typeof credentials)[number];
 
 export type TaskBudget = {
