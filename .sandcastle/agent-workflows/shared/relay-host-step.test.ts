@@ -24,6 +24,7 @@ const startRelayProcess = (args: string[], stdin: string, env: NodeJS.ProcessEnv
     });
     child.on("exit", () => reject(new Error(output)));
   });
+  ready.catch(() => {});
   return { ready, exited, output: () => output };
 };
 

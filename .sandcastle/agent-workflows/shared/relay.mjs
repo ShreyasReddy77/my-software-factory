@@ -15,6 +15,8 @@ const credentialHeaders = (credential, token, incoming) => {
   return { authorization: `Bearer ${token}`, "anthropic-beta": [...betas].join(",") };
 };
 
+export const relayPort = 8787;
+
 /** @type {readonly ["subscription", "api-key"]} */
 export const credentials = ["subscription", "api-key"];
 
@@ -72,7 +74,7 @@ const readStdin = async () => {
   return data.trim();
 };
 
-const serve = async ([credential, port = "8787"]) => {
+const serve = async ([credential, port = String(relayPort)]) => {
   if (!credentials.includes(credential)) {
     console.error(`usage: relay.mjs <${credentials.join("|")}> [port]`);
     process.exit(2);
@@ -83,8 +85,7 @@ const serve = async ([credential, port = "8787"]) => {
     process.exit(2);
   }
   if (process.env.GITHUB_OUTPUT)
-    fs.appendFileSync(process.env.GITHUB_OUTPUT, `claude-token-sha256=${claudeTokenHash(token)}
-`);
+    fs.appendFileSync(process.env.GITHUB_OUTPUT, `claude-token-sha256=${claudeTokenHash(token)}\n`);
   const relay = createRelay({ token, credential });
   relay.listen(Number(port), "127.0.0.1", () =>
     console.log(`relay ready on 127.0.0.1:${relay.address().port} credential=${credential}`)
