@@ -82,6 +82,7 @@ export type SandboxedAgentOptions = {
   readonly budget?: Budget;
   readonly hostEnv?: NodeJS.ProcessEnv;
   readonly sandboxProvider?: typeof bwrap;
+  readonly mounts?: readonly string[];
 };
 
 // The agent, sandbox and ceiling every factory run passes to Sandcastle. The
@@ -89,13 +90,16 @@ export type SandboxedAgentOptions = {
 // with the model budget.yml names for the task.
 export const sandboxedAgent = (
   task: AgentTask,
-  { budget = loadBudget(), hostEnv = process.env, sandboxProvider = bwrap }: SandboxedAgentOptions = {}
+  { budget = loadBudget(), hostEnv = process.env, sandboxProvider = bwrap, mounts = [] }: SandboxedAgentOptions = {}
 ) => {
   refuseSecretsIn(hostEnv);
   const line = budget.tasks[task];
   return {
     agent: withMaxTurns(sandcastle.claudeCode(line.model), line.maxTurns),
-    sandbox: sandboxProvider({ env: relayEnv() }),
+    sandbox: sandboxProvider({
+      env: relayEnv(),
+      ...(mounts.length > 0 ? { mounts: mounts.map((dir) => ({ hostPath: dir, sandboxPath: dir })) } : {}),
+    }),
     signal: ceilingSignal(task, line.agentMinutes),
   };
 };

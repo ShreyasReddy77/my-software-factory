@@ -79,6 +79,19 @@ describe("the agent launcher", () => {
     }
   });
 
+  it("shows the agent only the run's own folders beyond its worktree, at their host paths", () => {
+    const { sandbox } = sandboxedAgent("implement", {
+      budget: budget("subscription"),
+      hostEnv: cleanHost,
+      sandboxProvider: ((options) => ({ mounts: options?.mounts })) as typeof bwrap,
+      mounts: ["/home/runner/work/_temp/agent-io"],
+    });
+
+    expect(sandbox).toEqual({
+      mounts: [{ hostPath: "/home/runner/work/_temp/agent-io", sandboxPath: "/home/runner/work/_temp/agent-io" }],
+    });
+  });
+
   it.each([
     ["CLAUDE_CODE_OAUTH_TOKEN", "anything"],
     ["ANTHROPIC_API_KEY", "anything"],
