@@ -32,16 +32,16 @@ export const batchQuery = `query($owner: String!, $name: String!, $label: String
 }`;
 
 // GraphQL names an App's bot `slug`; the REST API and the gate name it `slug[bot]`.
+export const restActor = (actor: { readonly login: string; readonly __typename: string }) => ({
+  login: actor.__typename === "Bot" && !actor.login.endsWith("[bot]") ? `${actor.login}[bot]` : actor.login,
+  type: actor.__typename,
+});
+
 const asIssueEvents = (issue: BatchCandidate): IssueEvent[] =>
   issue.timelineItems.nodes.map(({ label, actor }) => ({
     event: "labeled",
     label: label ?? null,
-    actor: actor
-      ? {
-          login: actor.__typename === "Bot" && !actor.login.endsWith("[bot]") ? `${actor.login}[bot]` : actor.login,
-          type: actor.__typename,
-        }
-      : null,
+    actor: actor ? restActor(actor) : null,
   }));
 
 const exploreLabeller = (issue: BatchCandidate) => findLabeller(asIssueEvents(issue), triggerLabel("explore"));

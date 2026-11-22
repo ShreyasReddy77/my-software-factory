@@ -10,7 +10,7 @@ export type IssueWrite = {
 
 export type GraphqlRequest = {
   readonly query: string;
-  readonly variables: Readonly<Record<string, string>>;
+  readonly variables: Readonly<Record<string, string | number>>;
 };
 
 export const issueWritesMutation = (writes: readonly IssueWrite[]): GraphqlRequest => {

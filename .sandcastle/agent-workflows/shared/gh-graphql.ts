@@ -38,7 +38,23 @@ export const readLabelIds = <Name extends string>(repo: string, names: readonly 
   ) as Record<Name, string>;
 };
 
-export const writeIssues = (writes: readonly IssueWrite[]): void => {
+// Several issues by number in one call, each with the fields `selection` asks for.
+export const readIssues = <Issue>(repo: string, numbers: readonly number[], selection: string): Issue[] => {
+  if (numbers.length === 0) return [];
+  const fields = numbers.map((_, n) => `i${n}: issue(number: $i${n}) { ${selection} }`).join("\n");
+  const declarations = numbers.map((_, n) => `$i${n}: Int!`).join(", ");
+  const data = ghGraphql<{ repository: Record<string, Issue | null> }>({
+    query: `query($owner: String!, $name: String!, ${declarations}) { repository(owner: $owner, name: $name) {\n${fields}\n} }`,
+    variables: { ...repoVariables(repo), ...Object.fromEntries(numbers.map((number, n) => [`i${n}`, number])) },
+  });
+  return numbers.map((number, n) => {
+    const issue = data.repository[`i${n}`];
+    if (!issue) throw new Error(`${repo}#${number} is not an issue`);
+    return issue;
+  });
+};
+
+export const writeIssues =(writes: readonly IssueWrite[]): void => {
   if (writes.length > 0) ghGraphql(issueWritesMutation(writes));
 };
 

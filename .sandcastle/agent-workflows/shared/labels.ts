@@ -15,4 +15,6 @@ export const labels = {
   queued: "factory:queued",
   paused: "factory:paused",
   needsHuman: "factory:needs-human",
+  // v0's explore stop, kept until the PR loop renames it to factory:needs-human.
+  needsAHuman: "needs-a-human",
 } as const;
