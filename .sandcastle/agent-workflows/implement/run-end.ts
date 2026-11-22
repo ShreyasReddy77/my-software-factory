@@ -1,10 +1,12 @@
+import { classifyPause, pauseItemText, type Pause } from "../shared/budget-pause";
 import { labels, triggerLabel } from "../shared/labels";
-import { statusMarker } from "../shared/marker";
+import { statusMarker, writeMarker } from "../shared/marker";
 import type { Outcome } from "../shared/run-summary";
 
 export type AgentEnd =
   | { readonly kind: "finished" }
-  | { readonly kind: "ceiling hit" | "crashed"; readonly message: string };
+  | { readonly kind: "ceiling hit" | "crashed"; readonly message: string }
+  | { readonly kind: "paused"; readonly pause: Pause; readonly message: string };
 
 export type AgentRunFacts = {
   readonly agentEnd: AgentEnd;
@@ -18,6 +20,7 @@ export type AgentRunEnd = {
   readonly handOffToReview: boolean;
   readonly outcome: Outcome;
   readonly why: string;
+  readonly pause?: Pause;
 };
 
 export type AgentRunReport = {
@@ -33,16 +36,22 @@ const failedTry: Outcome = { kind: "failed try", try: 1, of: 1 };
 
 const maxTurnsStop = /error_max_turns|max(?:imum)?[ _-]?turns/i;
 
-export const classifyAgentEnd = (error: unknown): AgentEnd => {
+export const classifyAgentEnd = (error: unknown, now: Date): AgentEnd => {
   const message = error instanceof Error ? error.message : String(error);
-  if ((error instanceof Error && error.name === "CeilingHit") || maxTurnsStop.test(message))
-    return { kind: "ceiling hit", message };
+  if (error instanceof Error && error.name === "CeilingHit") return { kind: "ceiling hit", message };
+  const pause = classifyPause(message, now);
+  if (pause.kind !== "not a pause") return { kind: "paused", pause, message };
+  if (maxTurnsStop.test(message)) return { kind: "ceiling hit", message };
   return { kind: "crashed", message };
 };
 
 const noPush = (outcome: Outcome, why: string): AgentRunEnd => ({ push: false, handOffToReview: false, outcome, why });
 
+// A pause fails fast and pushes nothing: the restart builds afresh, and a
+// pause is not a try.
 export const decideAgentRunEnd = ({ agentEnd, commits, treeClean, guard }: AgentRunFacts): AgentRunEnd => {
+  if (agentEnd.kind === "paused")
+    return { ...noPush({ kind: "paused" }, agentEnd.message), pause: agentEnd.pause };
   if (agentEnd.kind === "crashed") return noPush(failedTry, `The agent crashed: ${agentEnd.message}`);
   if (commits === 0)
     return agentEnd.kind === "ceiling hit"
@@ -77,7 +86,18 @@ const reportText = (end: AgentRunEnd, { prUrl, handedOff, hostStepFailed, runUrl
   return `Implementer run **${end.outcome.kind === "ceiling hit" ? "hit its ceiling" : "failed"}** — ${logs}.${pr}\n\n${end.why}\n\n${retryText}`;
 };
 
+const pausedReport = (pause: Pause, runUrl: string): AgentRunReport => ({
+  block: false,
+  outcome: { kind: "paused" },
+  nextLabel: labels.paused,
+  comment:
+    `${pauseItemText(pause)} — [logs](${runUrl}). Nothing was pushed, and this is not a try. ` +
+    `The requeue run restarts it as \`${triggerLabel("implement")}\` once the budget pause ends. ` +
+    `${writeMarker(triggerLabel("implement"))} ${statusMarker}`,
+});
+
 export const reportAgentRun = (end: AgentRunEnd, facts: ReportFacts): AgentRunReport => {
+  if (end.pause !== undefined && !facts.hostStepFailed) return pausedReport(end.pause, facts.runUrl);
   const block = facts.hostStepFailed || !end.handOffToReview;
   return {
     block,

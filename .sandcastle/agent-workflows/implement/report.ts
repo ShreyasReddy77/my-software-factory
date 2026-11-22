@@ -6,9 +6,13 @@
 //   JOB_STATUS   job.status; anything but success means a host step failed
 //   PR_URL       the draft PR, when one was opened; HANDED_OFF true once agent:review is on it
 //   RUN_URL      this run's page; STARTED_AT the job's start, in epoch seconds
+//   FACTORY_REPO where the budget-pause ticket lives; FACTORY_APP_SLUG the App's slug
+// A paused run also opens or comments on the budget-pause ticket, so GH_TOKEN
+// needs Issues write on FACTORY_REPO too.
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { loadBudget } from "../shared/budget";
+import { recordBudgetPause } from "../shared/budget-pause-github";
 import { outputDir, required } from "../shared/common";
 import { ghApi, writeStepSummary } from "../shared/gh";
 import { labels } from "../shared/labels";
@@ -41,12 +45,20 @@ const report = reportAgentRun(end, {
 });
 
 ghApi(["-X", "POST", `${issuePath}/comments`, "-f", `body=${report.comment}`]);
-if (report.block) ghApi(["-X", "POST", `${issuePath}/labels`, "-f", `labels[]=${labels.blocked}`]);
+if (report.block || report.nextLabel === labels.paused)
+  ghApi(["-X", "POST", `${issuePath}/labels`, "-f", `labels[]=${report.nextLabel}`]);
 try {
   ghApi(["-X", "DELETE", `${issuePath}/labels/${encodeURIComponent(labels.inProgress)}`]);
 } catch {
   console.log(`${labels.inProgress} was already off #${issueNumber}`);
 }
+
+if (report.outcome.kind === "paused" && end.pause !== undefined)
+  recordBudgetPause(
+    end.pause,
+    { repo, number: issueNumber, runUrl: required("RUN_URL") },
+    { factoryRepo: required("FACTORY_REPO"), factoryAppLogin: `${required("FACTORY_APP_SLUG")}[bot]` }
+  );
 
 const usage = readJson<RunUsage>("agent-end.json") ?? {};
 writeStepSummary(

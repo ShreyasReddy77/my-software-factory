@@ -35,7 +35,7 @@ const runAgent = async (): Promise<AgentEnd> => {
     return { kind: "finished" };
   } catch (error) {
     console.error(error);
-    return classifyAgentEnd(error);
+    return classifyAgentEnd(error, new Date());
   }
 };
 
