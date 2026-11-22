@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { classifyAgentEnd, decideAgentRunEnd, reportAgentRun, type AgentRunFacts } from "./run-end";
 import { CeilingHit } from "../shared/common";
+import pauseErrors from "../shared/fixtures/pause-errors.json" with { type: "json" };
+import { readMarker } from "../shared/marker";
+
+const now = new Date("2026-11-22T14:00:00Z");
 
 const built: AgentRunFacts = {
   agentEnd: { kind: "finished" },
@@ -81,18 +85,64 @@ describe("how an agent run ends", () => {
 
 describe("telling a ceiling from a crash", () => {
   it("reads the launcher's time ceiling as a ceiling hit", () => {
-    expect(classifyAgentEnd(new CeilingHit("implement", 45))).toEqual({
+    expect(classifyAgentEnd(new CeilingHit("implement", 45), now)).toEqual({
       kind: "ceiling hit",
       message: "implement hit its ceiling of 45 agent minutes",
     });
   });
 
   it("reads Claude Code's max-turns stop as a ceiling hit", () => {
-    expect(classifyAgentEnd(new Error("Agent failed: error_max_turns"))).toMatchObject({ kind: "ceiling hit" });
+    expect(classifyAgentEnd(new Error("Agent failed: error_max_turns"), now)).toMatchObject({ kind: "ceiling hit" });
   });
 
   it("reads anything else as a crash", () => {
-    expect(classifyAgentEnd(new Error("spawn claude ENOENT"))).toEqual({ kind: "crashed", message: "spawn claude ENOENT" });
+    expect(classifyAgentEnd(new Error("spawn claude ENOENT"), now)).toEqual({ kind: "crashed", message: "spawn claude ENOENT" });
+  });
+
+  it("reads a Claude usage limit as a pause, with its reset", () => {
+    expect(classifyAgentEnd(new Error(`Agent failed: ${pauseErrors.sessionLimit}`), now)).toEqual({
+      kind: "paused",
+      pause: { kind: "usage limit", resetsAt: "2026-11-22T15:45:00.000Z" },
+      message: `Agent failed: ${pauseErrors.sessionLimit}`,
+    });
+  });
+
+  it("reads running out of credit as a pause with no reset", () => {
+    expect(classifyAgentEnd(new Error(pauseErrors.creditTooLow), now)).toMatchObject({
+      kind: "paused",
+      pause: { kind: "out of credit" },
+    });
+  });
+});
+
+describe("a run paused by a Claude limit", () => {
+  const paused: AgentRunFacts = {
+    agentEnd: { kind: "paused", pause: { kind: "usage limit", resetsAt: "2026-11-22T15:45:00.000Z" }, message: "limit" },
+    commits: 2,
+    treeClean: true,
+    guard: { verdict: "push" },
+  };
+
+  it("pushes nothing and is a pause, not a try", () => {
+    expect(decideAgentRunEnd(paused)).toMatchObject({ push: false, handOffToReview: false, outcome: { kind: "paused" } });
+  });
+
+  it("labels the ticket factory:paused, never blocked, and says when it resets", () => {
+    const report = reportAgentRun(decideAgentRunEnd(paused), { handedOff: false, hostStepFailed: false, runUrl });
+
+    expect(report).toMatchObject({ block: false, outcome: { kind: "paused" }, nextLabel: "factory:paused" });
+    expect(report.comment).toContain("Paused: usage limit, resets at 2026-11-22 15:45 UTC");
+  });
+
+  it("leaves the marker the requeue run restarts it by", () => {
+    const report = reportAgentRun(decideAgentRunEnd(paused), { handedOff: false, hostStepFailed: false, runUrl });
+
+    expect(readMarker(report.comment)).toBe("agent:implement");
+    expect(report.comment).toContain("<!-- factory:status -->");
+  });
+
+  it("names the pause it hit, for the budget-pause ticket", () => {
+    expect(decideAgentRunEnd(paused).pause).toEqual({ kind: "usage limit", resetsAt: "2026-11-22T15:45:00.000Z" });
   });
 });
 
