@@ -238,5 +238,17 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
+      - name: Mint the requeue starter's token
+        id: token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+          owner: ShreyasReddy77
+          repositories: my-software-factory
+          permission-actions: write
+
       - name: Start the requeue run
-        run: echo "The requeue run does not exist yet, so there is nothing to start."
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: gh workflow run requeue.yml --repo "$FACTORY_REPO" --ref main

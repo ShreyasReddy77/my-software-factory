@@ -5,6 +5,7 @@ import botLabelled from "./fixtures/issue-events-labeled-by-bot.json" with { typ
 import personLabelled from "./fixtures/issue-events-labeled-by-person.json" with { type: "json" };
 import runList from "./fixtures/workflow-runs.json" with { type: "json" };
 import {
+  countAgentRuns,
   decideGate,
   findLabeller,
   type GateInput,
@@ -300,6 +301,24 @@ describe("the gate decision", () => {
         { ...event!, label: { ...event!.label, name: "agent:review" } },
       ];
       expect(findLabeller(events, "agent:implement")).toEqual({ login: "github-actions[bot]", type: "Bot" });
+    });
+  });
+});
+
+describe("counting agent runs", () => {
+  it("counts today's agent runs from midnight UTC and every agent run in flight, however old", () => {
+    const factoryRuns = [
+      run({ id: 1, display_title: "[pr owner/repo#9] review", created_at: "2026-11-21T23:50:00Z" }),
+      run({ id: 2, display_title: "[ticket owner/repo#5] implement", status: "completed", conclusion: "success" }),
+      run({ id: 3, display_title: "[ticket owner/repo#6] implement", status: "completed", created_at: "2026-11-21T22:00:00Z" }),
+      run({ id: 4, display_title: "[ticket owner/repo#6] implement (no agent)" }),
+      run({ id: 5, display_title: "Requeue run" }),
+    ];
+    const otherRuns = [run({ id: 6, display_title: "[repo owner/other] explore", status: "queued" })];
+
+    expect(countAgentRuns([{ repo, runs: factoryRuns }, { repo: "owner/other", runs: otherRuns }], now)).toEqual({
+      todaysRuns: 2,
+      runsInFlight: 2,
     });
   });
 });

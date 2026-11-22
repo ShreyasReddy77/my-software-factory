@@ -42,7 +42,9 @@ name: Agent — Implement A Ticket
 #        - Refused by the push guard, crashed, or nothing committed: it
 #          pushes nothing, comments why, and sets `agent:blocked`.
 #      Its job timeout is `agent_minutes` + 15; if that fires, something hung.
-#      Its last job will start the requeue run, once the requeue run exists.
+#      Its last job, however the run ended, starts the requeue run
+#      (requeue.yml) by workflow_dispatch, with an App token that may only
+#      start runs.
 #
 #   Locks come from run names, never from Actions concurrency groups: the
 #   gate run is named `[ticket owner/repo#<n>] implement (no agent)` and the

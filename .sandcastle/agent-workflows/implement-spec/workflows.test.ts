@@ -112,8 +112,9 @@ describe("implement-spec's agent run", () => {
     for (const job of ["split", "build"]) expect(agent.jobs[job]?.["timeout-minutes"]).toBe("${{ fromJSON(inputs.job_timeout) }}");
   });
 
-  it("never starts itself again", () => {
-    for (const file of files) expect(read(file)).not.toMatch(/gh workflow run|actions\/workflows\/[^ ]*\/dispatches/);
+  it("never starts itself again: the only run it starts is the requeue run", () => {
+    for (const file of files)
+      expect(read(file)).not.toMatch(/gh workflow run (?!requeue\.yml )|actions\/workflows\/[^ ]*\/dispatches/);
   });
 
   it("scans the build's commits with the push guard before any push", () => {

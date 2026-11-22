@@ -54,6 +54,9 @@ name: Agent — Explore The Tickets
 #                 instead (not a try) and the budget-pause ticket is opened or
 #                 commented on; the requeue run restarts it.
 #      Its job timeout is `agent_minutes` + 15; if that fires, something hung.
+#      Its last job, however the run ended, starts the requeue run
+#      (requeue.yml) by workflow_dispatch, with an App token that may only
+#      start runs.
 #
 #   Locks come from run names, never from Actions concurrency groups: the gate
 #   run is `[repo owner/repo] explore (no agent)`, the agent run

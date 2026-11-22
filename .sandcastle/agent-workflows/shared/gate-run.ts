@@ -13,7 +13,7 @@
 import { loadBudget } from "./budget";
 import { readBudgetPauseTicket } from "./budget-pause-github";
 import { required } from "./common";
-import { decideGate, findLabeller, type IssueEvent, type Labeller, type WorkflowRun } from "./gate";
+import { decideGate, findLabeller, type IssueEvent, type Labeller } from "./gate";
 import { jobTimeoutMinutes, planGateRun, type GateAction } from "./gate-run-plan";
 import { ghApi, ghPages, writeStepSummary } from "./gh";
 import { ghGraphql, relabelIssues, repoVariables } from "./gh-graphql";
@@ -23,6 +23,7 @@ import { statusMarker } from "./marker";
 import type { LockKey } from "./run-name";
 import { renderRunSummary } from "./run-summary";
 import { isAgentTask, lockScopes } from "./tasks";
+import { readWorkflowRuns } from "./workflow-runs-github";
 
 const startedAt = Date.now();
 const now = new Date(startedAt);
@@ -69,19 +70,10 @@ const readBatch = (trigger: BatchIssue): BatchIssue[] => {
 const lockKey: LockKey =
   lockScopes[task] === "repo" ? { scope: "repo", repo } : { scope: lockScopes[task], repo, number: issueNumber };
 
-// Yesterday onwards: in-flight runs started before midnight UTC still count.
-const runListSince = (time: Date): string =>
-  new Date(time.getTime() - 24 * 60 * 60_000).toISOString().slice(0, 10);
-
-const readRuns = (): WorkflowRun[] =>
-  ghPages<{ workflow_runs: WorkflowRun[] }>(
-    `repos/${factoryRepo}/actions/runs?per_page=100&created=>=${runListSince(now)}`
-  ).flatMap((page) => page.workflow_runs);
-
 const issue = ghApi([issuePath]) as { node_id: string; labels: { name: string }[] };
 const decision = decideGate({
   budget,
-  runLists: [{ repo: factoryRepo, runs: readRuns() }],
+  runLists: [{ repo: factoryRepo, runs: readWorkflowRuns(factoryRepo, now) }],
   budgetPause: readBudgetPauseTicket(factoryRepo, factoryAppLogin),
   task,
   item: { labels: issue.labels.map((label) => label.name), labeller: readLabeller() },

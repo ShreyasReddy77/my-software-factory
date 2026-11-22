@@ -11,11 +11,12 @@
 import { loadBudget } from "../shared/budget";
 import { readBudgetPauseTicket } from "../shared/budget-pause-github";
 import { required } from "../shared/common";
-import { decideGate, findLabeller, type IssueEvent, type Labeller, type WorkflowRun } from "../shared/gate";
+import { decideGate, findLabeller, type IssueEvent, type Labeller } from "../shared/gate";
 import { ghApi, ghPages, writeStepSummary } from "../shared/gh";
 import { labels, specQueueLabel, triggerLabel } from "../shared/labels";
 import { statusMarker } from "../shared/marker";
 import { renderRunSummary } from "../shared/run-summary";
+import { readWorkflowRuns } from "../shared/workflow-runs-github";
 import { planSpecGate, type SpecGateAction } from "./gate-plan";
 import { surveyQueue, type QueueIssue } from "./queue";
 
@@ -44,12 +45,7 @@ const readLabeller = (): Labeller | undefined => {
   }
 };
 
-// Yesterday onwards: in-flight runs started before midnight UTC still count.
-const runListSince = (time: Date): string => new Date(time.getTime() - 24 * 60 * 60_000).toISOString().slice(0, 10);
-
-const runs: WorkflowRun[] = ghPages<{ workflow_runs: WorkflowRun[] }>(
-  `repos/${factoryRepo}/actions/runs?per_page=100&created=>=${runListSince(now)}`
-).flatMap((page) => page.workflow_runs);
+const runs = readWorkflowRuns(factoryRepo, now);
 
 const budgetPause = readBudgetPauseTicket(factoryRepo, factoryAppLogin);
 
