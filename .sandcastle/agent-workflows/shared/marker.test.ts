@@ -30,7 +30,7 @@ describe("the hidden marker", () => {
       read: (body) =>
         /<!-- factory:marker v2 restart-as=(\S+) -->/.exec(body)?.[1],
     };
-    const nextRelease = [nextForm, ...markerForms];
+    const nextRelease: [MarkerForm, ...MarkerForm[]] = [nextForm, ...markerForms];
     const previousBody = writeMarker("agent:explore");
 
     expect(readMarker(previousBody, nextRelease)).toBe("agent:explore");
