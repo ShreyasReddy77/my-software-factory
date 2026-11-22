@@ -39,7 +39,7 @@ export const runAgentStep = async <Result>(
     outcome = { agentEnd: { kind: "finished" }, result: await work(logging) };
   } catch (error) {
     console.error(error);
-    outcome = { agentEnd: classifyAgentEnd(error) };
+    outcome = { agentEnd: classifyAgentEnd(error, new Date()) };
   }
   const { agentEnd } = outcome;
   console.log(`\nThe agent ${agentEnd.kind === "finished" ? "finished" : `ended: ${agentEnd.kind}, ${agentEnd.message}`}`);

@@ -11,6 +11,7 @@
 //   FACTORY_APP_SLUG  the App's slug, from the token step
 // A run that fails after its claim marks the ticket blocked before it exits.
 import { loadBudget } from "./budget";
+import { readBudgetPauseTicket } from "./budget-pause-github";
 import { required } from "./common";
 import { decideGate, findLabeller, type IssueEvent, type Labeller, type WorkflowRun } from "./gate";
 import { jobTimeoutMinutes, planGateRun, type GateAction } from "./gate-run-plan";
@@ -77,14 +78,11 @@ const readRuns = (): WorkflowRun[] =>
     `repos/${factoryRepo}/actions/runs?per_page=100&created=>=${runListSince(now)}`
   ).flatMap((page) => page.workflow_runs);
 
-// The budget-pause ticket arrives with the budget pause; until then no pause is open.
-const readBudgetPause = (): { readonly open: boolean } => ({ open: false });
-
 const issue = ghApi([issuePath]) as { node_id: string; labels: { name: string }[] };
 const decision = decideGate({
   budget,
   runLists: [{ repo: factoryRepo, runs: readRuns() }],
-  budgetPause: readBudgetPause(),
+  budgetPause: readBudgetPauseTicket(factoryRepo, factoryAppLogin),
   task,
   item: { labels: issue.labels.map((label) => label.name), labeller: readLabeller() },
   lockKey,

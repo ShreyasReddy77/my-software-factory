@@ -18,3 +18,6 @@ export const labels = {
   // v0's explore stop, kept until the PR loop renames it to factory:needs-human.
   needsAHuman: "needs-a-human",
 } as const;
+
+// Marks a ticket in a spec's queue. Implement-spec creates it per spec.
+export const specQueueLabel = (spec: number): string => `spec:${spec}`;
