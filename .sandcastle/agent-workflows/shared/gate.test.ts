@@ -127,4 +127,44 @@ describe("the gate decision", () => {
       expect(decision).toEqual({ kind: "queued", reason: "daily cap" });
     });
   });
+
+  describe("concurrency", () => {
+    const withRuns = (concurrentRuns: number, ...runs: WorkflowRun[]) =>
+      input({
+        budget: { dailyRuns: 8, concurrentRuns },
+        runLists: [{ repo, runs: [thisGateRun, ...runs] }],
+      });
+
+    it.each(["queued", "in_progress", "waiting", "pending", "requested"])(
+      "queues when agent runs %s fill every slot",
+      (status) => {
+        expect(
+          decideGate(withRuns(1, run({ id: 1, display_title: "[pr owner/repo#9] review", status })))
+        ).toEqual({ kind: "queued", reason: "concurrency" });
+      }
+    );
+
+    it("counts a run still going that started before midnight", () => {
+      expect(
+        decideGate(
+          withRuns(
+            1,
+            run({ id: 1, display_title: "[pr owner/repo#9] review", created_at: "2026-11-21T23:50:00Z" })
+          )
+        )
+      ).toEqual({ kind: "queued", reason: "concurrency" });
+    });
+
+    it("ignores finished runs and gate runs still going", () => {
+      expect(
+        decideGate(
+          withRuns(
+            1,
+            run({ id: 1, display_title: "[pr owner/repo#9] review", status: "completed", conclusion: "failure" }),
+            run({ id: 2, display_title: "[pr owner/repo#9] review (no agent)" })
+          )
+        )
+      ).toEqual({ kind: "proceed" });
+    });
+  });
 });

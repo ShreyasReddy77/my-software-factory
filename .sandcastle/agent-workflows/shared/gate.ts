@@ -41,7 +41,7 @@ export type GateInput = {
 export type GateDecision =
   | { readonly kind: "proceed" }
   | { readonly kind: "paused" }
-  | { readonly kind: "queued"; readonly reason: "daily cap" };
+  | { readonly kind: "queued"; readonly reason: "daily cap" | "concurrency" };
 
 type NamedRun = WorkflowRun & { readonly runName: RunName };
 
@@ -53,6 +53,8 @@ const namedRuns = (runLists: readonly RunList[]): NamedRun[] =>
     })
   );
 
+const inFlight = (run: WorkflowRun): boolean => run.status !== "completed";
+
 const midnightUtc = (now: Date): number =>
   Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
 
@@ -62,5 +64,7 @@ export const decideGate = (input: GateInput): GateDecision => {
   const today = midnightUtc(input.now);
   const todaysRuns = agentRuns.filter((run) => Date.parse(run.created_at) >= today);
   if (todaysRuns.length >= input.budget.dailyRuns) return { kind: "queued", reason: "daily cap" };
+  if (agentRuns.filter(inFlight).length >= input.budget.concurrentRuns)
+    return { kind: "queued", reason: "concurrency" };
   return { kind: "proceed" };
 };
