@@ -63,7 +63,7 @@ name: Agent — Implement A Ticket
 #   budget.yml on main — the model, credential, caps and ceilings.
 #   A `stable` tag — every entry file names the @stable gate run too, so the
 #     tag must exist even while this repository runs @main.
-#   The labels, created once: see docs/setup-checklist.md.
+#   The labels, created once: see the README.
 #
 # A CAUTION THAT COMES WITH IT
 #   `issues: labeled` fires on issues, which cannot come from a fork. Do not

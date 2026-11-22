@@ -48,7 +48,7 @@ name: Requeue run
 #     requests write (labels, the pause ticket), Actions read (the run list).
 #     Labels the App adds start workflows, which is what restarts a task.
 #   budget.yml on main — the caps and the priority order.
-#   The labels, created once: see docs/setup-checklist.md.
+#   The labels, created once: see the README.
 
 on:
   schedule:
