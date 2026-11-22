@@ -8,7 +8,7 @@
 //   FACTORY_REPO where the budget-pause ticket lives; FACTORY_APP_SLUG the App's slug
 // A Claude pause labels the batch factory:paused instead and opens or comments
 // on the budget-pause ticket, so GH_TOKEN needs Issues write on FACTORY_REPO too.
-import type { AgentEnd } from "../implement/run-end";
+import type { AgentEnd } from "../shared/agent-end";
 import { loadBudget } from "../shared/budget";
 import { recordBudgetPause } from "../shared/budget-pause-github";
 import { required } from "../shared/common";
@@ -16,8 +16,9 @@ import { writeStepSummary } from "../shared/gh";
 import { readIssues, readLabelIds, writeIssues } from "../shared/gh-graphql";
 import { labels } from "../shared/labels";
 import type { RunUsage } from "../shared/result-event";
+import { runSeconds, usageFacts } from "../shared/run-files";
 import { renderRunSummary } from "../shared/run-summary";
-import { planExploreFinish } from "./finish-plan";
+import { planExploreFinish, type JobResult } from "./finish-plan";
 
 type BatchState = { readonly id: string; readonly number: number; readonly labels: { readonly nodes: { readonly name: string }[] } };
 
@@ -30,7 +31,7 @@ const inProgress = states.filter((issue) => issue.labels.nodes.some((label) => l
 
 const finish = planExploreFinish({
   agentEnd: recorded.agentEnd,
-  jobResults: JSON.parse(required("JOB_RESULTS")) as string[],
+  jobResults: JSON.parse(required("JOB_RESULTS")) as JobResult[],
   stillInProgress: inProgress.map((issue) => issue.number),
   runUrl: required("RUN_URL"),
 });
@@ -67,9 +68,8 @@ writeStepSummary(
     task: "explore",
     targetRepo: repo,
     outcome: finish.outcome,
-    ...(recorded.turns === undefined ? {} : { turns: recorded.turns }),
-    ...(recorded.tokens === undefined ? {} : { tokens: recorded.tokens }),
-    seconds: Math.max(0, Math.round(Date.now() / 1000) - Number(required("STARTED_AT"))),
+    ...usageFacts(recorded),
+    seconds: runSeconds(new Date()),
     model: loadBudget().tasks.explore.model,
     ...(finish.block.length > 0 ? { nextLabel: labels.blocked } : {}),
     ...(finish.pause.length > 0 ? { nextLabel: labels.paused } : {}),

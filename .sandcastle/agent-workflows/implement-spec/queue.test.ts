@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { queueIssues, surveyQueue, type QueueIssue, type SpecDecomposition } from "./queue";
+import { queueIssues, surveyQueue, type QueueIssue, type SpecQueue } from "./queue";
 
 const ticket = (number: number, position: number, dependsOn: readonly number[], extra: Partial<QueueIssue> = {}): QueueIssue => ({
   number,
   state: "open",
   labels: ["spec:7"],
-  body: `Part of #7\n\nPosition: ${position}\nDepends on: ${dependsOn.join(", ")}\nShape: cross-cutting\n\n---\n\nBuild it.`,
+  openPullRequests: 0,
+  body: `Part of #7\n\nPosition: ${position}\nDepends on: ${dependsOn.join(", ")}\n\n---\n\nBuild it.`,
   ...extra,
 });
 
@@ -36,6 +37,18 @@ describe("surveying a spec's queue", () => {
     expect(surveyQueue(queue)).toEqual({ kind: "ready", ticket: 14 });
   });
 
+  it("skips a built ticket whose PR is still open, until that PR merges and closes it", () => {
+    const queue = [ticket(10, 1, [], { openPullRequests: 1 }), ticket(11, 2, [])];
+
+    expect(surveyQueue(queue)).toEqual({ kind: "ready", ticket: 11 });
+  });
+
+  it("holds a ticket's dependants while its PR is open", () => {
+    const queue = [ticket(10, 1, [], { openPullRequests: 1 }), ticket(11, 2, [1])];
+
+    expect(surveyQueue(queue)).toEqual({ kind: "nothing ready", open: [10, 11], held: [10] });
+  });
+
   it("reports a drained queue when every ticket is closed", () => {
     expect(surveyQueue([ticket(10, 1, [], { state: "closed" })])).toEqual({ kind: "drained" });
   });
@@ -54,15 +67,15 @@ describe("surveying a spec's queue", () => {
 });
 
 describe("writing a spec's queue as issues", () => {
-  const decomposition: SpecDecomposition = {
+  const queue: SpecQueue = {
     tickets: [
-      { position: 1, title: "First", body: "## What\n\nA.", shape: "service-module", depends_on: [] },
-      { position: 2, title: "Second", body: "## What\n\nB.", shape: "route-only", depends_on: [1] },
+      { position: 1, title: "First", body: "## What\n\nA.", depends_on: [] },
+      { position: 2, title: "Second", body: "## What\n\nB.", depends_on: [1] },
     ],
   };
 
   it("labels each ticket with its spec's queue label and links the spec", () => {
-    const issues = queueIssues(decomposition, 7);
+    const issues = queueIssues(queue, 7);
 
     expect(issues.map(({ title, labels }) => ({ title, labels }))).toEqual([
       { title: "First", labels: ["spec:7"] },
@@ -73,10 +86,11 @@ describe("writing a spec's queue as issues", () => {
   });
 
   it("writes bodies the survey reads back in order", () => {
-    const written = queueIssues(decomposition, 7).map((issue, index): QueueIssue => ({
+    const written = queueIssues(queue, 7).map((issue, index): QueueIssue => ({
       number: 20 + index,
       state: "open",
       labels: issue.labels,
+      openPullRequests: 0,
       body: issue.body,
     }));
 

@@ -7,8 +7,6 @@ import { loadBudget, type Budget } from "./budget";
 import { relayPort } from "./relay.mjs";
 import type { AgentTask } from "./tasks";
 
-export const outputDir = (): string => process.env.OUTPUT_DIR ?? "/tmp";
-
 export const required = (name: string): string => {
   const value = process.env[name];
   if (!value) {
@@ -17,6 +15,8 @@ export const required = (name: string): string => {
   }
   return value;
 };
+
+export const outputDir = (): string => required("OUTPUT_DIR");
 
 export const writeJson = (filename: string, value: unknown): void => {
   fs.mkdirSync(outputDir(), { recursive: true });

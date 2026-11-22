@@ -7,17 +7,17 @@
 //   FACTORY_REF       stable or main; FACTORY_SHA the commit this run pinned
 //   AGENT_WORKFLOW    the agent run's entry file, started by workflow_dispatch
 //   FACTORY_APP_SLUG  the App's slug, from the token step
-// A run that fails after a claim marks the claimed issue blocked before it exits.
 import { loadBudget } from "../shared/budget";
 import { readBudgetPauseTicket } from "../shared/budget-pause-github";
 import { required } from "../shared/common";
-import { decideGate, findLabeller, type IssueEvent, type Labeller } from "../shared/gate";
-import { ghApi, ghPages, writeStepSummary } from "../shared/gh";
+import { decideGate } from "../shared/gate";
+import { carryOutGatePlan, readLabeller } from "../shared/gate-run-github";
+import { ghApi, writeStepSummary } from "../shared/gh";
+import { readAllPages, repoVariables, type Connection } from "../shared/gh-graphql";
 import { labels, specQueueLabel, triggerLabel } from "../shared/labels";
-import { statusMarker } from "../shared/marker";
 import { renderRunSummary } from "../shared/run-summary";
 import { readWorkflowRuns } from "../shared/workflow-runs-github";
-import { planSpecGate, type SpecGateAction } from "./gate-plan";
+import { planSpecGate } from "./gate-plan";
 import { surveyQueue, type QueueIssue } from "./queue";
 
 const startedAt = Date.now();
@@ -29,44 +29,44 @@ const spec = Number(required("ISSUE"));
 const factoryRepo = required("FACTORY_REPO");
 const factoryAppLogin = `${required("FACTORY_APP_SLUG")}[bot]`;
 const budget = loadBudget();
-
-const issuePath = (number: number): string => `repos/${repo}/issues/${number}`;
-
-const readLabeller = (): Labeller | undefined => {
-  const events = ghPages<IssueEvent[]>(`${issuePath(spec)}/events?per_page=100`).flat();
-  const actor = findLabeller(events, triggerLabel(task));
-  if (actor === undefined) return undefined;
-  if (actor.type !== "User") return { ...actor, permission: "none" };
-  try {
-    const { permission } = ghApi([`repos/${repo}/collaborators/${actor.login}/permission`]) as { permission: string };
-    return { ...actor, permission };
-  } catch {
-    return { ...actor, permission: "none" };
-  }
-};
-
 const runs = readWorkflowRuns(factoryRepo, now);
-
 const budgetPause = readBudgetPauseTicket(factoryRepo, factoryAppLogin);
 
-type ApiIssue = {
-  number: number;
-  state: "open" | "closed";
-  labels: { name: string }[];
-  body: string | null;
-  pull_request?: unknown;
+type QueueNode = {
+  readonly number: number;
+  readonly state: "OPEN" | "CLOSED";
+  readonly body: string;
+  readonly labels: { readonly nodes: readonly { readonly name: string }[] };
+  readonly closedByPullRequestsReferences: { readonly totalCount: number };
 };
 
-const readQueue = (): QueueIssue[] =>
-  ghPages<ApiIssue[]>(
-    `repos/${repo}/issues?state=all&per_page=100&labels=${encodeURIComponent(specQueueLabel(spec))}`
-  )
-    .flat()
-    .filter((issue) => issue.pull_request === undefined)
-    .map((issue) => ({ ...issue, labels: issue.labels.map((label) => label.name) }));
+const queueQuery = `query($owner: String!, $name: String!, $label: String!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    issues(first: 100, after: $after, labels: [$label], states: [OPEN, CLOSED]) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        number state body
+        labels(first: 100) { nodes { name } }
+        closedByPullRequestsReferences(first: 1, includeClosedPrs: false) { totalCount }
+      }
+    }
+  }
+}`;
 
-const specIssue = ghApi([issuePath(spec)]) as { labels: { name: string }[] };
-const item = { labels: specIssue.labels.map((label) => label.name), labeller: readLabeller() };
+const readQueue = (): QueueIssue[] =>
+  readAllPages<{ repository: { issues: Connection<QueueNode> } }, QueueNode>(
+    { query: queueQuery, variables: { ...repoVariables(repo), label: specQueueLabel(spec) } },
+    (data) => data.repository.issues
+  ).map((node) => ({
+    number: node.number,
+    state: node.state === "OPEN" ? "open" : "closed",
+    body: node.body,
+    labels: node.labels.nodes.map((label) => label.name),
+    openPullRequests: node.closedByPullRequestsReferences.totalCount,
+  }));
+
+const specIssue = ghApi([`repos/${repo}/issues/${spec}`]) as { labels: { name: string }[] };
+const item = { labels: specIssue.labels.map((label) => label.name), labeller: readLabeller(repo, spec, task) };
 
 const plan = planSpecGate({
   spec: { repo, number: spec },
@@ -99,55 +99,11 @@ const plan = planSpecGate({
   agentMinutes: { split: budget.tasks["implement-spec"].agentMinutes, build: budget.tasks.implement.agentMinutes },
 });
 
-const removeLabel = (number: number, label: string): void => {
-  try {
-    ghApi(["-X", "DELETE", `${issuePath(number)}/labels/${encodeURIComponent(label)}`]);
-  } catch {
-    console.log(`${label} was already off #${number}`);
-  }
-};
-
-let claimed: number | undefined;
-
-const carryOut = (action: SpecGateAction): void => {
-  switch (action.kind) {
-    case "comment":
-      ghApi(["-X", "POST", `${issuePath(action.on)}/comments`, "-f", `body=${action.body}`]);
-      return;
-    case "add label":
-      ghApi(["-X", "POST", `${issuePath(action.on)}/labels`, "-f", `labels[]=${action.label}`]);
-      if (action.label === labels.inProgress) claimed = action.on;
-      return;
-    case "remove label":
-      removeLabel(action.on, action.label);
-      return;
-    case "dispatch agent run":
-      ghApi([
-        "-X", "POST", `repos/${action.factoryRepo}/actions/workflows/${action.workflow}/dispatches`,
-        "-f", `ref=${action.ref}`,
-        ...Object.entries(action.inputs).flatMap(([name, value]) => ["-f", `inputs[${name}]=${value}`]),
-      ]);
-      return;
-  }
-};
-
-// A claim with no agent run behind it would hold agent:in-progress forever.
-const releaseClaim = (number: number, error: unknown): void => {
-  const reason = error instanceof Error ? error.message : String(error);
-  ghApi(["-X", "POST", `${issuePath(number)}/labels`, "-f", `labels[]=${labels.blocked}`]);
-  removeLabel(number, labels.inProgress);
-  ghApi([
-    "-X", "POST", `${issuePath(number)}/comments`, "-f",
-    `body=The implement-spec gate run claimed this but could not start its agent run: ${reason}. ` +
-      `Take \`${labels.blocked}\` off and re-add \`${triggerLabel(task)}\` to spec #${spec} to retry. ${statusMarker}`,
-  ]);
-};
-
-try {
-  for (const action of plan.actions) carryOut(action);
-} catch (error) {
-  if (claimed !== undefined) releaseClaim(claimed, error);
-  throw error;
-}
+carryOutGatePlan({
+  repo,
+  item: spec,
+  actions: plan.actions,
+  retryText: `Take \`${labels.blocked}\` off and re-add \`${triggerLabel(task)}\` to spec #${spec} to retry.`,
+});
 
 writeStepSummary(renderRunSummary({ ...plan.record, seconds: Math.round((Date.now() - startedAt) / 1000) }));

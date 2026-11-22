@@ -1,10 +1,8 @@
-import type { AgentEnd } from "../implement/run-end";
-import { pauseItemText, type Pause } from "../shared/budget-pause";
+import { failedTry, pausedComment, type AgentEnd, type GuardFacts } from "../shared/agent-end";
+import type { Pause } from "../shared/budget-pause";
 import { labels, triggerLabel } from "../shared/labels";
-import { statusMarker, writeMarker } from "../shared/marker";
 import type { Outcome } from "../shared/run-summary";
 
-// The one thing read from the PR itself: which ticket it closes.
 export const closedTicket = (body: string | null): number | undefined => {
   const number = /\b(?:closes|fixes|resolves) #([1-9][0-9]*)/i.exec(body ?? "")?.[1];
   return number === undefined ? undefined : Number(number);
@@ -13,7 +11,7 @@ export const closedTicket = (body: string | null): number | undefined => {
 export type ReviewRunFacts = {
   readonly agentEnd: AgentEnd;
   readonly commits: number;
-  readonly guard?: { readonly verdict: "push" } | { readonly verdict: "refuse"; readonly reasons: string };
+  readonly guard?: GuardFacts;
 };
 
 export type ReviewRunEnd = {
@@ -23,11 +21,6 @@ export type ReviewRunEnd = {
   readonly pause?: Pause;
 };
 
-// Review retries only when a person re-adds its label.
-const failedTry: Outcome = { kind: "failed try", try: 1, of: 1 };
-
-// A pause fails fast and pushes nothing: the restart reviews afresh, and a
-// pause is not a try.
 export const decideReviewEnd = ({ agentEnd, commits, guard }: ReviewRunFacts): ReviewRunEnd => {
   if (agentEnd.kind === "paused")
     return { push: false, outcome: { kind: "paused" }, why: agentEnd.message, pause: agentEnd.pause };
@@ -64,7 +57,6 @@ export type ReviewReport = {
   readonly comment: string;
 };
 
-// The verdict's own heading is how a real verdict is told from a note.
 const realVerdict = (verdict: string): boolean => verdict.includes("## Standards:");
 
 const retry = `Re-add \`${triggerLabel("review")}\` to retry.`;
@@ -89,10 +81,7 @@ const pausedReport = (pause: Pause, runUrl: string): ReviewReport => ({
   block: false,
   outcome: { kind: "paused" },
   nextLabel: labels.paused,
-  comment:
-    `${pauseItemText(pause)} — [logs](${runUrl}). Nothing was pushed, and this is not a try. ` +
-    `The requeue run restarts it as \`${triggerLabel("review")}\` once the budget pause ends. ` +
-    `${writeMarker(triggerLabel("review"))} ${statusMarker}`,
+  comment: pausedComment({ pause, runUrl, untouched: "pushed", restartTask: "review" }),
 });
 
 export const reportReview = (end: ReviewRunEnd, facts: ReviewReportFacts): ReviewReport => {

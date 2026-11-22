@@ -1,7 +1,6 @@
 // The waiting items as GraphQL returns them, and what the requeue planner
 // reads from each: its labels, its age and the trigger label it restarts as.
 import { restActor } from "../shared/batch";
-import { labels } from "../shared/labels";
 import { markerForms, readMarker, type MarkerForm } from "../shared/marker";
 import type { WaitingItem } from "./requeue-plan";
 
@@ -12,8 +11,24 @@ export type WaitingNode = {
   readonly number: number;
   readonly createdAt: string;
   readonly labels: { readonly nodes: readonly { readonly name: string }[] };
-  readonly comments: { readonly nodes: readonly { readonly body: string; readonly author: Author }[] };
+  readonly comments: WaitingComments;
 };
+
+export type WaitingComments = {
+  readonly pageInfo?: { readonly hasPreviousPage: boolean; readonly startCursor: string | null };
+  readonly nodes: readonly { readonly body: string; readonly author: Author }[];
+};
+
+const commentsSelection = "pageInfo { hasPreviousPage startCursor } nodes { body author { login __typename } }";
+
+// Older comments of one waiting item, for the rare item whose marker sits
+// before its last 100 comments.
+export const earlierCommentsQuery = `query($id: ID!, $before: String) {
+  node(id: $id) {
+    ... on Issue { comments(last: 100, before: $before) { ${commentsSelection} } }
+    ... on PullRequest { comments(last: 100, before: $before) { ${commentsSelection} } }
+  }
+}`;
 
 const connection = (field: "issues" | "pullRequests"): string => `
     ${field}(first: 100, after: $after, states: OPEN, labels: $labels, orderBy: { field: CREATED_AT, direction: ASC }) {
@@ -23,7 +38,7 @@ const connection = (field: "issues" | "pullRequests"): string => `
         number
         createdAt
         labels(first: 100) { nodes { name } }
-        comments(last: 100) { nodes { body author { login __typename } } }
+        comments(last: 100) { ${commentsSelection} }
       }
     }`;
 
@@ -34,8 +49,6 @@ export const waitingQuery = (field: "issues" | "pullRequests"): string =>
   repository(owner: $owner, name: $name) {${connection(field)}
   }
 }`;
-
-export const waitingLabelNames: readonly string[] = [labels.queued, labels.paused];
 
 export type WaitingItemContext = {
   readonly repo: string;

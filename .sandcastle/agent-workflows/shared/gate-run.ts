@@ -1,26 +1,23 @@
-// The gate run's host step: re-reads the item with its own App token, decides,
-// and claims and starts the agent run, or queues, pauses or ends quietly.
+// The gate run's host step for review, explore and implement: re-reads the
+// item with its own App token, decides, and claims and starts the agent run,
+// or queues, pauses or ends quietly.
 //   GH_TOKEN          App token for TARGET_REPO: Issues write, Actions write
 //   TASK              the agent task, e.g. implement
 //   TARGET_REPO       owner/repo of the item; ISSUE its number (a PR's number for review)
-// Locks follow the task's scope: a ticket, a PR, or the repo. A per-repo task
-// (explore) claims every open issue a trusted author labelled, as one batch.
 //   FACTORY_REPO      owner/repo the agent run's workflow lives in
 //   FACTORY_REF       stable or main; FACTORY_SHA the commit this run pinned
-//   AGENT_WORKFLOW    the agent run's workflow file, started by workflow_dispatch
+//   AGENT_WORKFLOW    the agent run's entry file, started by workflow_dispatch
 //   FACTORY_APP_SLUG  the App's slug, from the token step
-// A run that fails after its claim marks the ticket blocked before it exits.
 import { loadBudget } from "./budget";
 import { readBudgetPauseTicket } from "./budget-pause-github";
 import { required } from "./common";
-import { decideGate, findLabeller, type IssueEvent, type Labeller } from "./gate";
-import { jobTimeoutMinutes, planGateRun, type GateAction } from "./gate-run-plan";
-import { ghApi, ghPages, writeStepSummary } from "./gh";
-import { ghGraphql, relabelIssues, repoVariables } from "./gh-graphql";
+import { decideGate } from "./gate";
+import { carryOutGatePlan, readLabeller, readPermission } from "./gate-run-github";
+import { jobTimeoutMinutes, planGateRun, scopeShapes } from "./gate-run-plan";
+import { ghApi, writeStepSummary } from "./gh";
+import { ghGraphql, repoVariables } from "./gh-graphql";
 import { batchQuery, chooseBatch, labellersToCheck, type BatchCandidate, type BatchIssue } from "./batch";
-import { labels, triggerLabel } from "./labels";
-import { statusMarker } from "./marker";
-import type { LockKey } from "./run-name";
+import { triggerLabel } from "./labels";
 import { renderRunSummary } from "./run-summary";
 import { isAgentTask, lockScopes } from "./tasks";
 import { readWorkflowRuns } from "./workflow-runs-github";
@@ -36,48 +33,29 @@ const issueNumber = Number(required("ISSUE"));
 const factoryRepo = required("FACTORY_REPO");
 const factoryAppLogin = `${required("FACTORY_APP_SLUG")}[bot]`;
 const budget = loadBudget();
+const scope = scopeShapes[lockScopes[task]];
 
-const issuePath = `repos/${repo}/issues/${issueNumber}`;
-
-const readPermission = (login: string): string => {
-  try {
-    return (ghApi([`repos/${repo}/collaborators/${login}/permission`]) as { permission: string }).permission;
-  } catch {
-    return "none";
-  }
-};
-
-const readLabeller = (): Labeller | undefined => {
-  const events = ghPages<IssueEvent[]>(`${issuePath}/events?per_page=100`).flat();
-  const actor = findLabeller(events, triggerLabel(task));
-  if (actor === undefined) return undefined;
-  return { ...actor, permission: actor.type === "User" ? readPermission(actor.login) : "none" };
-};
-
-// A per-repo task works a batch: every open issue a trusted author labelled,
-// the labelled item always among them. One permission lookup per labeller.
 const readBatch = (trigger: BatchIssue): BatchIssue[] => {
   const data = ghGraphql<{ repository: { issues: { nodes: BatchCandidate[] } } }>({
     query: batchQuery,
     variables: { ...repoVariables(repo), label: triggerLabel(task) },
   });
   const candidates = data.repository.issues.nodes;
-  const permissions = Object.fromEntries(labellersToCheck(candidates).map((login) => [login, readPermission(login)]));
+  const permissions = Object.fromEntries(
+    labellersToCheck(candidates).map((login) => [login, readPermission(repo, login)])
+  );
   const batch = chooseBatch(candidates, permissions, factoryAppLogin);
   return batch.some((issue) => issue.number === trigger.number) ? batch : [trigger, ...batch];
 };
 
-const lockKey: LockKey =
-  lockScopes[task] === "repo" ? { scope: "repo", repo } : { scope: lockScopes[task], repo, number: issueNumber };
-
-const issue = ghApi([issuePath]) as { node_id: string; labels: { name: string }[] };
+const issue = ghApi([`repos/${repo}/issues/${issueNumber}`]) as { node_id: string; labels: { name: string }[] };
 const decision = decideGate({
   budget,
   runLists: [{ repo: factoryRepo, runs: readWorkflowRuns(factoryRepo, now) }],
   budgetPause: readBudgetPauseTicket(factoryRepo, factoryAppLogin),
   task,
-  item: { labels: issue.labels.map((label) => label.name), labeller: readLabeller() },
-  lockKey,
+  item: { labels: issue.labels.map((label) => label.name), labeller: readLabeller(repo, issueNumber, task) },
+  lockKey: scope.lockKey(repo, issueNumber),
   thisRunId: Number(required("GITHUB_RUN_ID")),
   factoryAppLogin,
   now,
@@ -102,64 +80,12 @@ const plan = planGateRun(decision, {
   },
 });
 
-const removeLabel = (label: string): void => {
-  try {
-    ghApi(["-X", "DELETE", `${issuePath}/labels/${encodeURIComponent(label)}`]);
-  } catch {
-    console.log(`${label} was already off #${issueNumber}`);
-  }
-};
-
-let claimed = false;
-
-const carryOut = (action: GateAction): void => {
-  switch (action.kind) {
-    case "comment":
-      ghApi(["-X", "POST", `${issuePath}/comments`, "-f", `body=${action.body}`]);
-      return;
-    case "add label":
-      ghApi(["-X", "POST", `${issuePath}/labels`, "-f", `labels[]=${action.label}`]);
-      claimed ||= action.label === labels.inProgress;
-      return;
-    case "remove label":
-      removeLabel(action.label);
-      return;
-    case "claim batch": {
-      claimed ||= action.add === labels.inProgress;
-      relabelIssues(repo, (batch ?? []).map((member) => member.id), action.add, action.remove);
-      return;
-    }
-    case "dispatch agent run":
-      ghApi([
-        "-X", "POST", `repos/${action.factoryRepo}/actions/workflows/${action.workflow}/dispatches`,
-        "-f", `ref=${action.ref}`,
-        ...Object.entries(action.inputs).flatMap(([name, value]) => ["-f", `inputs[${name}]=${value}`]),
-      ]);
-      return;
-  }
-};
-
-// A claim with no agent run behind it would hold agent:in-progress forever.
-const releaseClaim = (error: unknown): void => {
-  const reason = error instanceof Error ? error.message : String(error);
-  if (batch === undefined) {
-    ghApi(["-X", "POST", `${issuePath}/labels`, "-f", `labels[]=${labels.blocked}`]);
-    removeLabel(labels.inProgress);
-  } else {
-    relabelIssues(repo, batch.map((member) => member.id), labels.blocked, labels.inProgress);
-  }
-  ghApi([
-    "-X", "POST", `${issuePath}/comments`, "-f",
-    `body=The gate run claimed this ${batch === undefined ? "item" : "batch"} but could not start its agent run: ${reason}. ` +
-      `Re-add \`${triggerLabel(task)}\` to retry. ${statusMarker}`,
-  ]);
-};
-
-try {
-  for (const action of plan.actions) carryOut(action);
-} catch (error) {
-  if (claimed) releaseClaim(error);
-  throw error;
-}
+carryOutGatePlan({
+  repo,
+  item: issueNumber,
+  actions: plan.actions,
+  ...(batch === undefined ? {} : { batch }),
+  retryText: `Re-add \`${triggerLabel(task)}\` to retry.`,
+});
 
 writeStepSummary(renderRunSummary({ ...plan.record, seconds: Math.round((Date.now() - startedAt) / 1000) }));

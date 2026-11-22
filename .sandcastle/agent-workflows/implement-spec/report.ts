@@ -1,6 +1,6 @@
 // The agent run's last word, however it ended: on the spec after a split,
-// on the ticket after a build. Comments, labels, closes a built ticket, and
-// writes the run summary.
+// on the ticket after a build. Comments, labels, and writes the run summary.
+// A built ticket stays open: its PR's "Closes #n" closes it when the PR merges.
 //   GH_TOKEN     App token for TARGET_REPO: Issues write
 //   TARGET_REPO  owner/repo; MODE split or build; SPEC the spec; ISSUE the spec or the ticket
 //   OUTPUT_DIR   holds agent-end.json and, for a build, run-end.json
@@ -12,36 +12,33 @@
 // A paused run pauses the spec, which restarts as agent:implement-spec, and
 // opens or comments on the budget-pause ticket, so GH_TOKEN needs Issues
 // write on FACTORY_REPO too.
-import * as fs from "node:fs";
-import * as path from "node:path";
-import { decideAgentRunEnd, type AgentEnd, type AgentRunEnd } from "../implement/run-end";
+import { hostStepFailedEnd, type AgentRunEnd } from "../shared/agent-run-end";
 import { loadBudget } from "../shared/budget";
 import { recordBudgetPause } from "../shared/budget-pause-github";
-import { outputDir, required } from "../shared/common";
+import { required } from "../shared/common";
 import { ghApi, writeStepSummary } from "../shared/gh";
 import { labels } from "../shared/labels";
-import type { RunUsage } from "../shared/result-event";
+import { readAgentEndFile, readJson, runSeconds, usageFacts } from "../shared/run-files";
 import { renderRunSummary } from "../shared/run-summary";
-import { reportBuild, reportSplit, type BuildReport, type SpecRunReport } from "./run-end";
-const readJson = <T>(name: string): T | undefined => {
-  const file = path.join(outputDir(), name);
-  return fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, "utf8")) as T) : undefined;
-};
+import type { SpecGateMode } from "./gate-plan";
+import { reportBuild, reportSplit, type BuildReport } from "./run-end";
+
+const isMode = (mode: string): mode is SpecGateMode => mode === "split" || mode === "build";
 
 const repo = required("TARGET_REPO");
 const mode = required("MODE");
-if (mode !== "split" && mode !== "build") throw new Error(`MODE ${mode} is neither split nor build`);
+if (!isMode(mode)) throw new Error(`MODE ${mode} is neither split nor build`);
 const spec = Number(required("SPEC"));
 const issueNumber = Number(required("ISSUE"));
 const issuePath = `repos/${repo}/issues/${issueNumber}`;
 const hostStepFailed = required("JOB_STATUS") !== "success";
 const runUrl = required("RUN_URL");
-const usage = readJson<RunUsage & { agentEnd?: AgentEnd }>("agent-end.json") ?? {};
+const agentEndFile = readAgentEndFile();
 
-const splitReport = (): SpecRunReport => {
+const splitReport = (): BuildReport => {
   const written = process.env.WRITTEN ? Number(process.env.WRITTEN) : undefined;
   return reportSplit({
-    agentEnd: usage.agentEnd ?? { kind: "crashed", message: "the split's host step recorded no end" },
+    agentEnd: agentEndFile.agentEnd,
     ...(written === undefined ? {} : { written }),
     spec,
     hostStepFailed,
@@ -50,15 +47,8 @@ const splitReport = (): SpecRunReport => {
 };
 
 const buildReport = (): BuildReport => {
-  const end: AgentRunEnd =
-    readJson<AgentRunEnd>("run-end.json") ??
-    decideAgentRunEnd({
-      agentEnd: { kind: "crashed", message: "a host step failed before the run's end was decided" },
-      commits: 0,
-      treeClean: true,
-    });
   const prUrl = process.env.PR_URL || undefined;
-  return reportBuild(end, {
+  return reportBuild(readJson<AgentRunEnd>("run-end.json") ?? hostStepFailedEnd, {
     ...(prUrl === undefined ? {} : { prUrl }),
     handedOff: process.env.HANDED_OFF === "true",
     hostStepFailed,
@@ -67,8 +57,7 @@ const buildReport = (): BuildReport => {
   });
 };
 
-const report: SpecRunReport & Partial<Pick<BuildReport, "close" | "specPause">> =
-  mode === "split" ? splitReport() : buildReport();
+const report = mode === "split" ? splitReport() : buildReport();
 
 ghApi(["-X", "POST", `${issuePath}/comments`, "-f", `body=${report.comment}`]);
 if (report.block || report.nextLabel === labels.paused)
@@ -83,7 +72,6 @@ try {
 } catch {
   console.log(`${labels.inProgress} was already off #${issueNumber}`);
 }
-if (report.close) ghApi(["-X", "PATCH", issuePath, "-f", "state=closed"]);
 if (report.pause !== undefined)
   recordBudgetPause(
     report.pause,
@@ -97,9 +85,8 @@ writeStepSummary(
     targetRepo: repo,
     item: { kind: "issue", number: issueNumber },
     outcome: report.outcome,
-    ...(usage.turns === undefined ? {} : { turns: usage.turns }),
-    ...(usage.tokens === undefined ? {} : { tokens: usage.tokens }),
-    seconds: Math.max(0, Math.round(Date.now() / 1000) - Number(required("STARTED_AT"))),
+    ...usageFacts(agentEndFile),
+    seconds: runSeconds(new Date()),
     model: loadBudget().tasks[mode === "split" ? "implement-spec" : "implement"].model,
     ...(report.nextLabel === undefined ? {} : { nextLabel: report.nextLabel }),
   })

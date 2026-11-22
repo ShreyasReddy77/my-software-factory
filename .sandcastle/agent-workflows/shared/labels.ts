@@ -1,8 +1,12 @@
 import { agentTasks, type AgentTask } from "./tasks";
 
+const triggerPrefix = "agent:";
+
 export type TriggerLabel = `agent:${AgentTask}`;
 
-export const triggerLabel = (task: AgentTask): TriggerLabel => `agent:${task}`;
+export const triggerLabel = (task: AgentTask): TriggerLabel => `${triggerPrefix}${task}`;
+
+export const taskOfTriggerLabel = (label: TriggerLabel): AgentTask => label.slice(triggerPrefix.length) as AgentTask;
 
 export const triggerLabels: readonly TriggerLabel[] = agentTasks.map(triggerLabel);
 
@@ -15,9 +19,9 @@ export const labels = {
   queued: "factory:queued",
   paused: "factory:paused",
   needsHuman: "factory:needs-human",
-  // v0's explore stop, kept until the PR loop renames it to factory:needs-human.
   needsAHuman: "needs-a-human",
 } as const;
 
-// Marks a ticket in a spec's queue. Implement-spec creates it per spec.
+export const waitingLabels: readonly string[] = [labels.queued, labels.paused];
+
 export const specQueueLabel = (spec: number): string => `spec:${spec}`;

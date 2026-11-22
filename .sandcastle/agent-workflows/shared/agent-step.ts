@@ -1,9 +1,8 @@
 import * as path from "node:path";
 import type { RunOptions } from "@ai-hero/sandcastle";
-import { classifyAgentEnd, type AgentEnd } from "../implement/run-end";
+import { classifyAgentEnd, describeAgentEnd, type AgentEnd } from "./agent-end";
 import { required, writeJson } from "./common";
 import { readResultEvent, type RunUsage } from "./result-event";
-import type { AgentTask } from "./tasks";
 
 export const addUsage = (a: RunUsage, b: RunUsage): RunUsage => {
   const turns = a.turns === undefined && b.turns === undefined ? undefined : (a.turns ?? 0) + (b.turns ?? 0);
@@ -17,17 +16,17 @@ export const addUsage = (a: RunUsage, b: RunUsage): RunUsage => {
   return { ...(turns === undefined ? {} : { turns }), ...(tokens === undefined ? {} : { tokens }) };
 };
 
-// Runs an agent task's work, streams it to the log, and records how it ended
-// with its turns and tokens in $OUTPUT_DIR/agent-end.json. It never throws, so
-// the host steps after it can still scan, push and report.
+// Runs an agent's work, streams it to the log and to $OUTPUT_DIR/<name>.log,
+// and records how it ended, with the turns and tokens summed over every pass,
+// in $OUTPUT_DIR/agent-end.json. It never throws: see CODING_STANDARDS.md.
 export const runAgentStep = async <Result>(
-  task: AgentTask,
+  name: string,
   work: (logging: RunOptions["logging"]) => Promise<Result>
 ): Promise<{ readonly agentEnd: AgentEnd; readonly result?: Result }> => {
   let usage: RunUsage = {};
   const logging: RunOptions["logging"] = {
     type: "file",
-    path: path.join(required("OUTPUT_DIR"), `${task}.log`),
+    path: path.join(required("OUTPUT_DIR"), `${name}.log`),
     onAgentStreamEvent: (event) => {
       if (event.type === "text") process.stdout.write(event.message);
       else if (event.type === "toolCall") console.log(`\n[${event.name}] ${event.formattedArgs}`);
@@ -42,7 +41,7 @@ export const runAgentStep = async <Result>(
     outcome = { agentEnd: classifyAgentEnd(error, new Date()) };
   }
   const { agentEnd } = outcome;
-  console.log(`\nThe agent ${agentEnd.kind === "finished" ? "finished" : `ended: ${agentEnd.kind}, ${agentEnd.message}`}`);
+  console.log(`\nThe ${name} agent ${describeAgentEnd(agentEnd)}`);
   writeJson("agent-end.json", { agentEnd, ...usage });
   return outcome;
 };

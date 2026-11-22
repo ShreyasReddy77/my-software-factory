@@ -19,14 +19,9 @@ import { recordBudgetPause } from "../shared/budget-pause-github";
 import { outputDir, required } from "../shared/common";
 import { ghApi, writeStepSummary } from "../shared/gh";
 import { labels } from "../shared/labels";
-import type { RunUsage } from "../shared/result-event";
+import { readAgentEndFile, readJson, runSeconds, usageFacts } from "../shared/run-files";
 import { renderRunSummary } from "../shared/run-summary";
 import { decideReviewEnd, reportReview, type ReviewRunEnd } from "./review-end";
-
-const readJson = <T>(name: string): T | undefined => {
-  const file = path.join(outputDir(), name);
-  return fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, "utf8")) as T) : undefined;
-};
 
 const repo = required("TARGET_REPO");
 const prNumber = Number(required("PR"));
@@ -50,7 +45,6 @@ const report = reportReview(end, {
 
 ghApi(["-X", "POST", `${issuePath}/comments`, "-f", `body=${report.comment}`]);
 
-// The inline comments go where the fixes went: the fallback PR if the push was rejected.
 const reviewFile = path.join(outputDir(), "review-comments.json");
 const review = readJson<{ comments: unknown[] }>("review-comments.json");
 if (review && review.comments.length > 0)
@@ -74,16 +68,14 @@ if (report.outcome.kind === "paused" && end.pause !== undefined)
     { factoryRepo: required("FACTORY_REPO"), factoryAppLogin: `${required("FACTORY_APP_SLUG")}[bot]` }
   );
 
-const usage = readJson<RunUsage>("agent-end.json") ?? {};
 writeStepSummary(
   renderRunSummary({
     task: "review",
     targetRepo: repo,
     item: { kind: "pr", number: prNumber },
     outcome: report.outcome,
-    ...(usage.turns === undefined ? {} : { turns: usage.turns }),
-    ...(usage.tokens === undefined ? {} : { tokens: usage.tokens }),
-    seconds: Math.max(0, Math.round(Date.now() / 1000) - Number(required("STARTED_AT"))),
+    ...usageFacts(readAgentEndFile()),
+    seconds: runSeconds(new Date()),
     model: loadBudget().tasks.review.model,
     ...(report.nextLabel === undefined ? {} : { nextLabel: report.nextLabel }),
   })

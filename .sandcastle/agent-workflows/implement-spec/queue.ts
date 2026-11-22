@@ -1,16 +1,14 @@
 import type { z } from "zod/v4";
 import { labels, specQueueLabel, triggerLabel } from "../shared/labels";
-import type { specDecompositionSchema } from "./decomposition-schema";
+import type { specQueueSchema } from "./queue-schema";
 
-export type SpecDecomposition = z.infer<typeof specDecompositionSchema>;
+export type SpecQueue = z.infer<typeof specQueueSchema>;
 
-// A spec's queue is the issues labelled `spec:<n>`. Until the PR loop it keeps
-// v0's scheme: each ticket's body carries `Position:` and `Depends on:` lines,
-// and a ticket counts as done once it is closed.
 export type QueueIssue = {
   readonly number: number;
   readonly state: "open" | "closed";
   readonly labels: readonly string[];
+  readonly openPullRequests: number;
   readonly body: string | null;
 };
 
@@ -20,8 +18,6 @@ export type QueueSurvey =
   | { readonly kind: "drained" }
   | { readonly kind: "nothing ready"; readonly open: readonly number[]; readonly held: readonly number[] };
 
-// A ticket carrying one of these is taken by another run, parked for a
-// person, or waiting to be restarted, so the survey never picks it.
 const holdingLabels: readonly string[] = [
   labels.inProgress,
   labels.blocked,
@@ -50,14 +46,14 @@ export type NewQueueIssue = {
   readonly labels: readonly string[];
 };
 
-export const queueIssues = (decomposition: SpecDecomposition, spec: number): NewQueueIssue[] =>
-  [...decomposition.tickets]
+export const queueIssues = (queue: SpecQueue, spec: number): NewQueueIssue[] =>
+  [...queue.tickets]
     .sort((a, b) => a.position - b.position)
     .map((ticket) => ({
       title: ticket.title,
       body:
-        `Part of #${spec}\n\nPosition: ${ticket.position}\nDepends on: ${ticket.depends_on.join(", ")}\n` +
-        `Shape: ${ticket.shape}\n\n---\n\n${ticket.body}`,
+        `Part of #${spec}\n\nPosition: ${ticket.position}\nDepends on: ${ticket.depends_on.join(", ")}\n\n` +
+        `---\n\n${ticket.body}`,
       labels: [specQueueLabel(spec)],
     }));
 
@@ -69,7 +65,9 @@ export const surveyQueue =(issues: readonly QueueIssue[]): QueueSurvey => {
   const closed = new Set(tickets.filter((t) => t.state === "closed").map((t) => t.position));
   const open = tickets.filter((t) => t.state === "open");
   if (open.length === 0) return { kind: "drained" };
-  const held = open.filter((t) => t.labels.some((label) => holdingLabels.includes(label)));
+  const held = open.filter(
+    (t) => t.openPullRequests > 0 || t.labels.some((label) => holdingLabels.includes(label))
+  );
   const ready = open.find((t) => !held.includes(t) && t.dependsOn.every((position) => closed.has(position)));
   if (ready) return { kind: "ready", ticket: ready.number };
   return { kind: "nothing ready", open: open.map((t) => t.number), held: held.map((t) => t.number) };

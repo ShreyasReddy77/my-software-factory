@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decideAgentRunEnd } from "../implement/run-end";
+import { decideAgentRunEnd } from "../shared/agent-run-end";
 import { reportBuild, reportSplit } from "./run-end";
 
 const runUrl = "https://github.com/owner/repo/actions/runs/1";
@@ -63,18 +63,20 @@ describe("reporting a build", () => {
   const done = decideAgentRunEnd({ agentEnd: { kind: "finished" }, commits: 2, treeClean: true, guard: { verdict: "push" } });
   const prUrl = "https://github.com/owner/repo/pull/30";
 
-  it("once the draft PR is handed to review, closes the ticket so the queue moves on", () => {
+  it("once the draft PR is handed to review, leaves the ticket open for the PR to close when it merges", () => {
     const report = reportBuild(done, { prUrl, handedOff: true, hostStepFailed: false, runUrl, spec: 7 });
 
-    expect(report).toMatchObject({ block: false, close: true, outcome: { kind: "done" }, nextLabel: "agent:review" });
+    expect(report).toMatchObject({ block: false, outcome: { kind: "done" }, nextLabel: "agent:review" });
+    expect(report).not.toHaveProperty("close");
     expect(report.comment).toContain(prUrl);
+    expect(report.comment).toContain("closes when its PR merges");
   });
 
   it("on a failed build, blocks the ticket, keeps it open and says how to put it back", () => {
     const failed = decideAgentRunEnd({ agentEnd: { kind: "finished" }, commits: 0, treeClean: true });
     const report = reportBuild(failed, { handedOff: false, hostStepFailed: false, runUrl, spec: 7 });
 
-    expect(report).toMatchObject({ block: true, close: false, outcome: { kind: "failed try" } });
+    expect(report).toMatchObject({ block: true, outcome: { kind: "failed try" } });
     expect(report.comment).toContain("Take `agent:blocked` off");
     expect(report.comment).toContain("`agent:implement-spec` to #7");
   });
@@ -88,7 +90,7 @@ describe("reporting a build", () => {
     });
     const report = reportBuild(ceiling, { prUrl, handedOff: false, hostStepFailed: false, runUrl, spec: 7 });
 
-    expect(report).toMatchObject({ block: true, close: false, outcome: { kind: "ceiling hit" } });
+    expect(report).toMatchObject({ block: true, outcome: { kind: "ceiling hit" } });
   });
 
   it("on a Claude limit, frees the ticket and pauses the spec, which restarts as implement-spec", () => {
@@ -99,7 +101,7 @@ describe("reporting a build", () => {
     });
     const report = reportBuild(paused, { handedOff: false, hostStepFailed: false, runUrl, spec: 7 });
 
-    expect(report).toMatchObject({ block: false, close: false, outcome: { kind: "paused" }, pause: { kind: "out of credit" } });
+    expect(report).toMatchObject({ block: false, outcome: { kind: "paused" }, pause: { kind: "out of credit" } });
     expect(report.comment).not.toContain("restart-as");
     expect(report.specPause).toEqual({
       label: "factory:paused",
@@ -110,7 +112,7 @@ describe("reporting a build", () => {
   it("when the hand-off to review failed, keeps the ticket open and blocked", () => {
     const report = reportBuild(done, { prUrl, handedOff: false, hostStepFailed: true, runUrl, spec: 7 });
 
-    expect(report).toMatchObject({ block: true, close: false });
+    expect(report).toMatchObject({ block: true });
     expect(report.comment).toContain("Add `agent:review`");
   });
 });

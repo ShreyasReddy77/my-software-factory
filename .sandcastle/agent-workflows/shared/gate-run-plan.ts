@@ -1,6 +1,7 @@
 import type { GateDecision } from "./gate";
 import { labels, triggerLabel } from "./labels";
 import { statusMarker, writeMarker } from "./marker";
+import type { LockKey } from "./run-name";
 import type { OutcomeRecord } from "./run-summary";
 import { lockScopes, type AgentTask } from "./tasks";
 
@@ -9,20 +10,18 @@ export type AgentRunStart = {
   readonly workflow: string;
   readonly ref: string;
   readonly factorySha: string;
-  readonly jobTimeoutMinutes: number;
 };
 
 export type GateRunContext = {
   readonly task: AgentTask;
   readonly item: { readonly repo: string; readonly number: number };
-  readonly agentRun: AgentRunStart;
-  // A per-repo task's batch, the labelled item among it; claimed together.
+  readonly agentRun: AgentRunStart & { readonly jobTimeoutMinutes: number };
   readonly batch?: readonly number[];
 };
 
 export type GateAction =
-  | { readonly kind: "comment"; readonly body: string }
-  | { readonly kind: "add label" | "remove label"; readonly label: string }
+  | { readonly kind: "comment"; readonly on: number; readonly body: string }
+  | { readonly kind: "add label" | "remove label"; readonly on: number; readonly label: string }
   | { readonly kind: "claim batch"; readonly numbers: readonly number[]; readonly add: string; readonly remove: string }
   | {
       readonly kind: "dispatch agent run";
@@ -35,6 +34,30 @@ export type GateAction =
 export type GateRunPlan = {
   readonly actions: readonly GateAction[];
   readonly record: Omit<OutcomeRecord, "seconds">;
+};
+
+type ScopeShape = {
+  readonly itemKind: "issue" | "pr";
+  readonly lockKey: (repo: string, number: number) => LockKey;
+  readonly dispatchInput: (number: number, batch: readonly number[] | undefined) => Record<string, string>;
+};
+
+export const scopeShapes: Readonly<Record<LockKey["scope"], ScopeShape>> = {
+  repo: {
+    itemKind: "issue",
+    lockKey: (repo) => ({ scope: "repo", repo }),
+    dispatchInput: (number, batch) => ({ batch: JSON.stringify(batch ?? [number]) }),
+  },
+  pr: {
+    itemKind: "pr",
+    lockKey: (repo, number) => ({ scope: "pr", repo, number }),
+    dispatchInput: (number) => ({ pr: String(number) }),
+  },
+  ticket: {
+    itemKind: "issue",
+    lockKey: (repo, number) => ({ scope: "ticket", repo, number }),
+    dispatchInput: (number) => ({ issue: String(number) }),
+  },
 };
 
 const waitingText = (decision: GateDecision, task: AgentTask): string | undefined => {
@@ -57,38 +80,25 @@ const nextLabels = {
   paused: labels.paused,
 } as const;
 
-const itemInput = ({ task, item, batch }: GateRunContext): Record<string, string> => {
-  switch (lockScopes[task]) {
-    case "repo":
-      return { batch: JSON.stringify(batch ?? [item.number]) };
-    case "pr":
-      return { pr: String(item.number) };
-    case "ticket":
-      return { issue: String(item.number) };
-  }
-};
-
-const dispatch = (context: GateRunContext): GateAction => {
-  const { factoryRepo, workflow, ref, factorySha, jobTimeoutMinutes } = context.agentRun;
-  return {
-    kind: "dispatch agent run",
-    factoryRepo,
-    workflow,
-    ref,
-    inputs: { factory_sha: factorySha, ...itemInput(context), job_timeout: String(jobTimeoutMinutes) },
-  };
-};
+export const dispatchAgentRun = (agentRun: AgentRunStart, inputs: Readonly<Record<string, string>>): GateAction => ({
+  kind: "dispatch agent run",
+  factoryRepo: agentRun.factoryRepo,
+  workflow: agentRun.workflow,
+  ref: agentRun.ref,
+  inputs: { factory_ref: agentRun.ref, factory_sha: agentRun.factorySha, ...inputs },
+});
 
 const batchText = (batch: readonly number[] | undefined): string =>
   batch === undefined ? "" : ` Its batch holds ${batch.length} ${batch.length === 1 ? "issue" : "issues"}.`;
 
-// A batch is claimed together; any other item swaps its own trigger label.
-const swapLabels = (decision: GateDecision, { task, batch }: GateRunContext, nextLabel: string): GateAction[] =>
+export type GateLabelsContext = Omit<GateRunContext, "agentRun">;
+
+const swapLabels = (decision: GateDecision, { task, item, batch }: GateLabelsContext, nextLabel: string): GateAction[] =>
   decision.kind === "proceed" && batch !== undefined
     ? [{ kind: "claim batch", numbers: batch, add: nextLabel, remove: triggerLabel(task) }]
     : [
-        { kind: "add label", label: nextLabel },
-        { kind: "remove label", label: triggerLabel(task) },
+        { kind: "add label", on: item.number, label: nextLabel },
+        { kind: "remove label", on: item.number, label: triggerLabel(task) },
       ];
 
 const outcomeOf = (decision: GateDecision): OutcomeRecord["outcome"] => {
@@ -102,14 +112,13 @@ const outcomeOf = (decision: GateDecision): OutcomeRecord["outcome"] => {
   }
 };
 
-// Marker first and trigger label last, so a gate run that stops part-way
-// leaves the trigger on and re-adding it is still the retry.
-export const planGateRun = (decision: GateDecision, context: GateRunContext): GateRunPlan => {
+// Order: docs/factory-v1.md, "Locks, tries and claims".
+export const planGateLabels = (decision: GateDecision, context: GateLabelsContext): GateRunPlan => {
   const { task, item } = context;
   const record = {
     task: `${task} gate run`,
     targetRepo: item.repo,
-    item: { kind: lockScopes[task] === "pr" ? "pr" : "issue", number: item.number },
+    item: { kind: scopeShapes[lockScopes[task]].itemKind, number: item.number },
     outcome: outcomeOf(decision),
   } as const;
   const text = waitingText(decision, task);
@@ -118,12 +127,22 @@ export const planGateRun = (decision: GateDecision, context: GateRunContext): Ga
   const claim = decision.kind === "proceed" ? batchText(context.batch) : "";
   return {
     actions: [
-      { kind: "comment", body: `${text}${claim} ${writeMarker(triggerLabel(task))} ${statusMarker}` },
+      { kind: "comment", on: item.number, body: `${text}${claim} ${writeMarker(triggerLabel(task))} ${statusMarker}` },
       ...swapLabels(decision, context, nextLabel),
-      ...(decision.kind === "proceed" ? [dispatch(context)] : []),
     ],
     record: { ...record, nextLabel },
   };
+};
+
+export const planGateRun = (decision: GateDecision, context: GateRunContext): GateRunPlan => {
+  const plan = planGateLabels(decision, context);
+  if (decision.kind !== "proceed") return plan;
+  const { task, item, batch, agentRun } = context;
+  const inputs = {
+    ...scopeShapes[lockScopes[task]].dispatchInput(item.number, batch),
+    job_timeout: String(agentRun.jobTimeoutMinutes),
+  };
+  return { ...plan, actions: [...plan.actions, dispatchAgentRun(agentRun, inputs)] };
 };
 
 export const jobTimeoutMinutes = (agentMinutes: number): number => agentMinutes + 15;

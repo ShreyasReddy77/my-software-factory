@@ -5,47 +5,66 @@
 //                     write, Actions read
 //   FACTORY_REPO      owner/repo of the factory, whose items it restarts
 //   FACTORY_APP_SLUG  the App's slug, from the token step
+//   FINISHING_RUN_ID  optional: the agent run whose last job started this run,
+//                     which is not counted as in flight
 import { loadBudget } from "../shared/budget";
 import { readBudgetPauseTicket } from "../shared/budget-pause-github";
 import { required } from "../shared/common";
 import { countAgentRuns } from "../shared/gate";
 import { ghApi, writeStepSummary } from "../shared/gh";
-import { ghGraphql, readLabelIds, repoVariables, writeIssues } from "../shared/gh-graphql";
+import { ghGraphql, readAllPages, readLabelIds, repoVariables, writeIssues, type Connection } from "../shared/gh-graphql";
+import { waitingLabels } from "../shared/labels";
 import { statusMarker } from "../shared/marker";
 import { renderRunSummary } from "../shared/run-summary";
 import { readWorkflowRuns } from "../shared/workflow-runs-github";
 import { planRequeue, type RequeueAction, type WaitingItem } from "./requeue-plan";
-import { readWaitingItem, waitingLabelNames, waitingQuery, type WaitingNode } from "./waiting-items";
+import {
+  earlierCommentsQuery,
+  readWaitingItem,
+  waitingQuery,
+  type WaitingComments,
+  type WaitingNode,
+} from "./waiting-items";
 
 const startedAt = Date.now();
 const now = new Date(startedAt);
 
 const factoryRepo = required("FACTORY_REPO");
 const factoryAppLogin = `${required("FACTORY_APP_SLUG")}[bot]`;
+const finishingRunId = process.env.FINISHING_RUN_ID ? Number(process.env.FINISHING_RUN_ID) : undefined;
 const budget = loadBudget();
 
-type WaitingPage = {
-  repository: Record<string, { pageInfo: { hasNextPage: boolean; endCursor: string | null }; nodes: WaitingNode[] }>;
+const withEveryComment = (node: WaitingNode): WaitingNode => {
+  const nodes = [...node.comments.nodes];
+  let pageInfo = node.comments.pageInfo;
+  while (pageInfo?.hasPreviousPage) {
+    const page: WaitingComments = ghGraphql<{ node: { comments: WaitingComments } }>({
+      query: earlierCommentsQuery,
+      variables: { id: node.id, before: pageInfo.startCursor },
+    }).node.comments;
+    nodes.unshift(...page.nodes);
+    pageInfo = page.pageInfo;
+  }
+  return { ...node, comments: { nodes } };
 };
 
-const readWaiting = (field: "issues" | "pullRequests", kind: WaitingItem["kind"]): WaitingItem[] => {
-  const items: WaitingItem[] = [];
-  let after: string | null = null;
-  do {
-    const page: WaitingPage = ghGraphql<WaitingPage>({
-      query: waitingQuery(field),
-      variables: { ...repoVariables(factoryRepo), labels: waitingLabelNames, after },
-    });
-    const connection = page.repository[field]!;
-    items.push(...connection.nodes.map((node) => readWaitingItem(node, { repo: factoryRepo, kind, factoryAppLogin })));
-    after = connection.pageInfo.hasNextPage ? connection.pageInfo.endCursor : null;
-  } while (after !== null);
-  return items;
-};
+const readWaiting = (field: "issues" | "pullRequests", kind: WaitingItem["kind"]): WaitingItem[] =>
+  readAllPages<{ repository: Record<string, Connection<WaitingNode>> }, WaitingNode>(
+    { query: waitingQuery(field), variables: { ...repoVariables(factoryRepo), labels: waitingLabels } },
+    (data) => data.repository[field]!
+  ).map((node) => {
+    const context = { repo: factoryRepo, kind, factoryAppLogin };
+    const item = readWaitingItem(node, context);
+    return item.restartAs === undefined && node.comments.pageInfo?.hasPreviousPage
+      ? readWaitingItem(withEveryComment(node), context)
+      : item;
+  });
 
 const plan = planRequeue({
   budget,
-  runCounts: countAgentRuns([{ repo: factoryRepo, runs: readWorkflowRuns(factoryRepo, now) }], now),
+  runCounts: countAgentRuns([{ repo: factoryRepo, runs: readWorkflowRuns(factoryRepo, now) }], now, {
+    ...(finishingRunId === undefined ? {} : { finishingRunId }),
+  }),
   waiting: [...readWaiting("issues", "issue"), ...readWaiting("pullRequests", "pr")],
   budgetPause: readBudgetPauseTicket(factoryRepo, factoryAppLogin),
   now,
@@ -60,10 +79,7 @@ const closePauseTicket = (ticket: number): void => {
   ghApi(["-X", "PATCH", `repos/${factoryRepo}/issues/${ticket}`, "-f", "state=closed", "-f", "state_reason=completed"]);
 };
 
-// Two GraphQL calls for every restart: the waiting labels come off first, then
-// the trigger label goes back on, so its own gate run starts with an App label.
-// A run that stops between the two leaves items as a human cancel would, never
-// waiting a second time beside a run already working them.
+// Order: docs/factory-v1.md, "Requeue run".
 const restart = (restarts: readonly Extract<RequeueAction, { kind: "restart" }>[]): void => {
   if (restarts.length === 0) return;
   const names = [...new Set(restarts.flatMap((action) => [action.add, ...action.remove]))];

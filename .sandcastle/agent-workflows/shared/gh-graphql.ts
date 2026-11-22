@@ -15,6 +15,27 @@ export const ghGraphql = <Data>({ query, variables }: GraphqlRequest): Data => {
   return response.data;
 };
 
+export type Connection<Node> = {
+  readonly pageInfo: { readonly hasNextPage: boolean; readonly endCursor: string | null };
+  readonly nodes: readonly Node[];
+};
+
+// Every page of one connection. The query takes `$after: String` and asks for
+// `pageInfo { hasNextPage endCursor }`; `connection` finds it in the data.
+export const readAllPages = <Data, Node>(
+  request: GraphqlRequest,
+  connection: (data: Data) => Connection<Node>
+): Node[] => {
+  const nodes: Node[] = [];
+  let after: string | null = null;
+  do {
+    const page: Connection<Node> = connection(ghGraphql<Data>({ ...request, variables: { ...request.variables, after } }));
+    nodes.push(...page.nodes);
+    after = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
+  } while (after !== null);
+  return nodes;
+};
+
 export const repoVariables = (repo: string): { owner: string; name: string } => {
   const [owner = "", name = ""] = repo.split("/");
   return { owner, name };
