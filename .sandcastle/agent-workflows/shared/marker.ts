@@ -10,6 +10,10 @@ const v1: MarkerForm = {
   read: (body) => /<!-- factory:restart-as v1 (\S+) -->/.exec(body)?.[1],
 };
 
+// Every comment the factory posts carries this, so the next run leaves the
+// factory's own status lines out of the ticket text it gives the agent.
+export const statusMarker = "<!-- factory:status -->";
+
 // Current form first. A release that changes the form keeps every form the
 // previous release wrote, so items queued before an upgrade still restart.
 export const markerForms: readonly [MarkerForm, ...MarkerForm[]] = [v1];
