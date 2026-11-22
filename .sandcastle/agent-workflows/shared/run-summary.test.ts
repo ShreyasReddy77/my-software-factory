@@ -77,6 +77,57 @@ describe("the run summary", () => {
     expect(summary).toContain("| Next label | none |");
   });
 
+  describe("the requeue run's budget gauge", () => {
+    const requeueRun: OutcomeRecord = {
+      task: "requeue",
+      targetRepo: "owner/factory",
+      outcome: { kind: "done" },
+      seconds: 31,
+    };
+
+    it("renders counts against the cap and concurrency, an open pause with its reset, and items restarted", () => {
+      const summary = renderRunSummary({
+        ...requeueRun,
+        gauge: {
+          todaysRuns: 5,
+          dailyRuns: 8,
+          runsInFlight: 1,
+          concurrentRuns: 1,
+          budgetPause: { open: true, until: new Date("2026-11-22T15:00:00Z") },
+          restarted: 2,
+        },
+      });
+      expect(summary).toContain(
+        [
+          "### Budget gauge",
+          "",
+          "| | |",
+          "|---|---|",
+          "| Today's agent runs | 5 of 8 |",
+          "| Runs in flight | 1 of 1 |",
+          "| Budget pause | open until 2026-11-22 15:00 UTC |",
+          "| Items restarted | 2 |",
+          "",
+        ].join("\n")
+      );
+    });
+
+    it.each<[{ open: false } | { open: true; until?: Date }, string]>([
+      [{ open: false }, "closed"],
+      [{ open: true }, "open, no reset time"],
+    ])("writes the pause %j as %s", (budgetPause, written) => {
+      const summary = renderRunSummary({
+        ...requeueRun,
+        gauge: { todaysRuns: 0, dailyRuns: 8, runsInFlight: 0, concurrentRuns: 1, budgetPause, restarted: 0 },
+      });
+      expect(summary).toContain(`| Budget pause | ${written} |`);
+    });
+
+    it("leaves the gauge out of other runs' summaries", () => {
+      expect(renderRunSummary(agentRun)).not.toContain("Budget gauge");
+    });
+  });
+
   it("keeps a stop reason from breaking the table", () => {
     const summary = renderRunSummary({ ...agentRun, outcome: { kind: "stopped", reason: "a | b" } });
     expect(summary).toContain("| Outcome | stopped: a \\| b |");
