@@ -7,7 +7,7 @@ import { claudeAgent } from "../shared/common";
 // pre-commit hook; the workflow pushes and opens the PR.
 await sandcastle.run({
   name: "build-ticket",
-  agent: claudeAgent(),
+  agent: claudeAgent("implement"),
   sandbox: noSandbox(),
   logging: { type: "stdout" },
   promptFile: path.join(import.meta.dirname, "build-prompt.md"),

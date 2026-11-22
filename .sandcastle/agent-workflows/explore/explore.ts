@@ -8,7 +8,7 @@ import { explorePlanSchema } from "./plan-schema";
 
 const result = await runWithExtraction({
   name: "explore",
-  agent: claudeAgent(),
+  agent: claudeAgent("explore"),
   sandbox: noSandbox(),
   logging: { type: "stdout" },
   promptFile: path.join(import.meta.dirname, "prompt.md"),
