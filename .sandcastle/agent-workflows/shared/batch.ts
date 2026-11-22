@@ -1,5 +1,5 @@
-import { findLabeller, trustedLabeller, type IssueEvent } from "../shared/gate";
-import { triggerLabel } from "../shared/labels";
+import { findLabeller, trustedLabeller, type IssueEvent } from "./gate";
+import { triggerLabel } from "./labels";
 
 // An open issue carrying agent:explore, with the label events that vouch for it.
 export type BatchCandidate = {
