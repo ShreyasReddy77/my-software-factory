@@ -167,4 +167,70 @@ describe("the gate decision", () => {
       ).toEqual({ kind: "proceed" });
     });
   });
+
+  describe("the lock", () => {
+    const withRuns = (...runs: WorkflowRun[]) =>
+      input({
+        budget: { dailyRuns: 8, concurrentRuns: 5 },
+        runLists: [{ repo, runs: [thisGateRun, ...runs] }],
+      });
+
+    it("queues when an agent run on the same lock key is still going", () => {
+      expect(decideGate(withRuns(run({ id: 1, display_title: "[ticket owner/repo#5] implement" })))).toEqual({
+        kind: "queued",
+        reason: "lock",
+      });
+    });
+
+    it("shares one lock between tasks on the same PR", () => {
+      const reviewGate = run({
+        id: thisRunId,
+        display_title: "[pr owner/repo#5] review (no agent)",
+        created_at: "2026-11-22T10:00:00Z",
+      });
+      const decision = decideGate(
+        input({
+          budget: { dailyRuns: 8, concurrentRuns: 5 },
+          task: "review",
+          item: { ...input().item, labels: ["agent:review"] },
+          lockKey: { scope: "pr", repo, number: 5 },
+          runLists: [{ repo, runs: [reviewGate, run({ id: 1, display_title: "[pr owner/repo#5] fix-ci" })] }],
+        })
+      );
+      expect(decision).toEqual({ kind: "queued", reason: "lock" });
+    });
+
+    it("lets the earlier of two gate runs starting together go ahead, and queues the later", () => {
+      const sameSecond = "2026-11-22T10:00:00Z";
+      const earlier = run({ id: 899, display_title: "[ticket owner/repo#5] implement (no agent)", created_at: sameSecond });
+      const later = run({ id: 901, display_title: "[ticket owner/repo#5] implement (no agent)", created_at: sameSecond });
+      expect(decideGate(withRuns(earlier))).toEqual({ kind: "queued", reason: "lock" });
+      expect(decideGate(withRuns(later))).toEqual({ kind: "proceed" });
+    });
+
+    it("ignores finished runs, other lock keys and names that don't parse", () => {
+      expect(
+        decideGate(
+          withRuns(
+            run({ id: 1, display_title: "[ticket owner/repo#5] implement", status: "completed", conclusion: "success" }),
+            run({ id: 2, display_title: "[ticket owner/repo#6] implement (no agent)" }),
+            run({ id: 3, display_title: "[ticket owner/other#5] implement (no agent)" }),
+            run({ id: 4, display_title: "ignored" })
+          )
+        )
+      ).toEqual({ kind: "proceed" });
+    });
+
+    it("treats this run as the newest when the list doesn't show it yet", () => {
+      const decision = decideGate(
+        input({
+          budget: { dailyRuns: 8, concurrentRuns: 5 },
+          runLists: [
+            { repo, runs: [run({ id: 1, display_title: "[ticket owner/repo#5] implement (no agent)", created_at: "2026-11-22T09:59:59Z" })] },
+          ],
+        })
+      );
+      expect(decision).toEqual({ kind: "queued", reason: "lock" });
+    });
+  });
 });

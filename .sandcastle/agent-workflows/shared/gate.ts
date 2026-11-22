@@ -41,7 +41,7 @@ export type GateInput = {
 export type GateDecision =
   | { readonly kind: "proceed" }
   | { readonly kind: "paused" }
-  | { readonly kind: "queued"; readonly reason: "daily cap" | "concurrency" };
+  | { readonly kind: "queued"; readonly reason: "daily cap" | "concurrency" | "lock" };
 
 type NamedRun = WorkflowRun & { readonly runName: RunName };
 
@@ -55,16 +55,40 @@ const namedRuns = (runLists: readonly RunList[]): NamedRun[] =>
 
 const inFlight = (run: WorkflowRun): boolean => run.status !== "completed";
 
+const sameLock = (a: LockKey, b: LockKey): boolean =>
+  a.scope === b.scope &&
+  a.repo.toLowerCase() === b.repo.toLowerCase() &&
+  (a.scope === "repo" || b.scope === "repo" || a.number === b.number);
+
+const startedBefore = (a: WorkflowRun, b: WorkflowRun | undefined): boolean => {
+  if (b === undefined) return true;
+  const [timeA, timeB] = [Date.parse(a.created_at), Date.parse(b.created_at)];
+  return timeA !== timeB ? timeA < timeB : a.id < b.id;
+};
+
+const lockHeldByEarlierRun = (runs: readonly NamedRun[], input: GateInput): boolean => {
+  const thisRun = runs.find((run) => run.id === input.thisRunId);
+  return runs.some(
+    (run) =>
+      run.id !== input.thisRunId &&
+      inFlight(run) &&
+      sameLock(run.runName.lockKey, input.lockKey) &&
+      startedBefore(run, thisRun)
+  );
+};
+
 const midnightUtc = (now: Date): number =>
   Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
 
 export const decideGate = (input: GateInput): GateDecision => {
   if (input.budgetPause.open) return { kind: "paused" };
-  const agentRuns = namedRuns(input.runLists).filter((run) => run.runName.agentRun);
+  const runs = namedRuns(input.runLists);
+  const agentRuns = runs.filter((run) => run.runName.agentRun);
   const today = midnightUtc(input.now);
   const todaysRuns = agentRuns.filter((run) => Date.parse(run.created_at) >= today);
   if (todaysRuns.length >= input.budget.dailyRuns) return { kind: "queued", reason: "daily cap" };
   if (agentRuns.filter(inFlight).length >= input.budget.concurrentRuns)
     return { kind: "queued", reason: "concurrency" };
+  if (lockHeldByEarlierRun(runs, input)) return { kind: "queued", reason: "lock" };
   return { kind: "proceed" };
 };
