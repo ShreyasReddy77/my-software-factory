@@ -143,3 +143,11 @@ _Avoid_: secret scan (one of its checks), pre-push hook (it runs on the host, no
 **Marker**:
 A hidden comment the factory leaves on a waiting item, naming the trigger label it restarts as. Each release reads every marker form the previous release wrote.
 _Avoid_: tag, flag, state comment
+
+**Credential relay**:
+The small server on the runner that holds the Claude token and passes the agent's requests to Claude with it, so the agent never sees the token. Its host step is the only one that reads the token, and it hands later host steps only the token's hash, which is enough to recognise the token in a diff.
+_Avoid_: proxy, gateway (Claude Code's own name for the setting it points at the relay)
+
+**Stand-in token**:
+The worthless token the agent holds in place of the Claude token. The credential relay throws it away and sends the real one.
+_Avoid_: fake key, dummy token, canary (the spike's name for a token planted to be found)

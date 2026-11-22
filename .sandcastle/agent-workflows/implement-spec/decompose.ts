@@ -1,7 +1,6 @@
 import * as path from "node:path";
 import * as sandcastle from "@ai-hero/sandcastle";
-import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
-import { claudeAgent, writeJson } from "../shared/common";
+import { sandboxedAgent, writeJson } from "../shared/common";
 import { extractionPrompt } from "../shared/extraction-prompt";
 import { runWithExtraction } from "../shared/run-with-extraction";
 import { specDecompositionSchema } from "./decomposition-schema";
@@ -10,8 +9,7 @@ import { specDecompositionSchema } from "./decomposition-schema";
 // what actually creates them.
 const result = await runWithExtraction({
   name: "decompose",
-  agent: claudeAgent("implement-spec"),
-  sandbox: noSandbox(),
+  ...sandboxedAgent("implement-spec"),
   logging: { type: "stdout" },
   promptFile: path.join(import.meta.dirname, "decompose-prompt.md"),
   output: sandcastle.Output.object({
