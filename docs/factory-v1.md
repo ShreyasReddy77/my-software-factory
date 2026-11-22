@@ -127,7 +127,7 @@ Each rule holds for every task unless the task's section says otherwise.
 - **Models of the two extra runs:** the lesson-draft run and the weekly self-improvement run are both agent runs on Sonnet. (Foundation session)
 - **Priority when budget is short: finish before start.** Merge, then fix-CI and address-review, then review, then implement and implement-spec, then explore, map, lesson-draft and self-improvement; oldest first within each. The order is a list in `budget.yml`. ([Budget], Foundation session)
 - **A run never waits for budget.** Hitting a subscription's 5-hour or weekly limit: the run fails fast, comments "Paused: usage limit, resets at <time>", labels the item `factory:paused`. Out of API credit or over a spend limit (an error with no reset time): the same, with no reset time. A pause is not a try. ([Budget])
-- **One budget-pause ticket** in the factory, "Claude usage paused until <time>" or "Out of Claude credit". The first run that hits a limit opens it or comments on it. **Every run checks it first**, before setting up the sandbox, and pauses its item without calling Claude while it is open. The requeue run closes a timed pause once its reset has passed; the human closes a credit pause after topping up. Companion runs check the same ticket. ([Budget], [Private maps])
+- **One budget-pause ticket** in the factory, "Claude usage paused until <time>" or "Out of Claude credit". The first run that hits a limit opens it or comments on it. **Every run checks it right after the trigger label**, before setting up the sandbox, and pauses its item without calling Claude while it is open. The requeue run closes a timed pause once its reset has passed; the human closes a credit pause after topping up. Companion runs check the same ticket. ([Budget], [Private maps])
 - **Caps are enforced by the factory,** not by Actions `concurrency:` groups. The pre-run gates count in-flight runs and today's runs across both repos; when either is full the item is labelled `factory:queued` and the run ends. `target.yml`'s optional `max_runs_per_day` limits one repo's share of the daily cap. ([Budget], [Registration], [Merge and watch])
 - **Only agent runs count.** The daily cap and the concurrency limit count only runs that call Claude; an explore batch is one. Register, move, merge, the watch, the requeue run and gate runs spend no budget, so they never count, and merge skips the budget gates. "Today" starts at midnight UTC. (Foundation session)
 - **A gate run starts the agent run.** Every agent task is two Actions runs: a short **gate run** passes the pre-run gates and claims the item, then starts the task's **agent run** (by `workflow_dispatch`, passing the pinned factory commit). Today's runs are the agent runs created since midnight UTC, and runs in flight are the agent runs still queued or running: one list call per repo, with no per-run lookups. (Foundation session)
@@ -137,12 +137,16 @@ Each rule holds for every task unless the task's section says otherwise.
 
 Every agent run passes these in order before any agent work, and a run that fails one ends without touching the repo's code ([Implement], [Registration]):
 
-1. **Budget pause** open → `factory:paused`.
-2. **`enabled: false`** in `target.yml` → the item pauses (`factory:paused`) rather than being lost.
-3. **Visibility:** the repo's real visibility must match where it is registered. A mismatch stops the run, writes nothing about the repo's code, and files (or comments on) a move ticket in the companion. Until the move finishes, every run on the repo refuses.
-4. **Daily cap and concurrency** full → `factory:queued`.
-5. **Confirmed checks:** implement-type runs refuse a repo whose first map has not merged.
-6. **Trusted text only:** strangers' text is dropped, with a count, under the vouching rule above.
+1. **Trigger label:** the label must really be there, applied by a trusted author or the factory's App; otherwise the run ends quietly, labelling nothing. *Why first:* pausing an untrusted label would let the requeue run re-add it under the App's name and launder its trust. The check calls no Claude. (Foundation session)
+2. **Budget pause** open → `factory:paused`.
+3. **`enabled: false`** in `target.yml` → the item pauses (`factory:paused`) rather than being lost.
+4. **Visibility:** the repo's real visibility must match where it is registered. A mismatch stops the run, writes nothing about the repo's code, and files (or comments on) a move ticket in the companion. Until the move finishes, every run on the repo refuses.
+5. **Daily cap and concurrency** full → `factory:queued`.
+6. **Lock** held by an earlier run → `factory:queued` ([below](#locks-tries-and-claims)).
+7. **Confirmed checks:** implement-type runs refuse a repo whose first map has not merged.
+8. **Trusted text only:** strangers' text is dropped, with a count, under the vouching rule above.
+
+**Known limit, accepted:** two gate runs on different items can both pass the daily-cap and concurrency check before either agent run exists, so the factory can briefly run one over the limit. (Foundation session)
 
 Upstream runs add the policy check first ([Upstream flow]), and `agent:upstream` runs also check the map for drift ([Map freshness]).
 
