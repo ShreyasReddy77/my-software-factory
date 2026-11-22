@@ -88,6 +88,38 @@ export type BudgetPauseState =
   | { readonly open: false }
   | { readonly open: true; readonly ticket: number; readonly until?: Date };
 
+export type PausedItem = { readonly repo: string; readonly number: number; readonly runUrl: string };
+
+export type BudgetPauseTicketAction =
+  | { readonly kind: "open ticket"; readonly title: string; readonly body: string }
+  | { readonly kind: "update ticket"; readonly ticket: number; readonly title: string; readonly body: string }
+  | { readonly kind: "comment on ticket"; readonly ticket: number; readonly body: string };
+
+// An open pause with no reset outlasts every timed one.
+const outlasts = (pause: Pause, until: Date | undefined): boolean => {
+  if (until === undefined) return false;
+  const resetsAt = resetOf(pause);
+  return resetsAt === undefined || Date.parse(resetsAt) > until.getTime();
+};
+
+// The first pause opens the one ticket; later ones comment on it, and move
+// its reset only ever later, so the requeue run never closes it too early.
+export const planBudgetPauseTicket = (
+  pause: Pause,
+  current: BudgetPauseState,
+  item: PausedItem
+): BudgetPauseTicketAction[] => {
+  if (!current.open) return [{ kind: "open ticket", title: pauseTitle(pause), body: pauseTicketBody(pause) }];
+  const comment: BudgetPauseTicketAction = {
+    kind: "comment on ticket",
+    ticket: current.ticket,
+    body: `${pauseItemText(pause)}: ${item.repo}#${item.number} ([run](${item.runUrl})).`,
+  };
+  return outlasts(pause, current.until)
+    ? [{ kind: "update ticket", ticket: current.ticket, title: pauseTitle(pause), body: pauseTicketBody(pause) }, comment]
+    : [comment];
+};
+
 // Only the factory's App opens the ticket, so a look-alike from anyone else
 // can't pause the factory.
 export const readBudgetPause = (openIssues: readonly FactoryIssue[], factoryAppLogin: string): BudgetPauseState => {

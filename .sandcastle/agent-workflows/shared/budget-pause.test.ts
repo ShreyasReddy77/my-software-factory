@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import errors from "./fixtures/pause-errors.json" with { type: "json" };
-import { classifyPause, pauseItemText, pauseTicketBody, pauseTitle, readBudgetPause } from "./budget-pause";
+import {
+  classifyPause,
+  pauseItemText,
+  pauseTicketBody,
+  pauseTitle,
+  planBudgetPauseTicket,
+  readBudgetPause,
+} from "./budget-pause";
 
 // A Sunday afternoon, UTC: the runner's clock.
 const now = new Date("2026-11-22T14:00:00Z");
@@ -74,6 +81,51 @@ describe("the words a pause is reported in", () => {
   it("says when a usage limit showed no reset time", () => {
     expect(pauseItemText({ kind: "usage limit" })).toBe("Paused: usage limit, reset time unknown");
     expect(pauseTitle({ kind: "usage limit" })).toBe("Claude usage paused, reset time unknown");
+  });
+});
+
+describe("what a pause does to the budget-pause ticket", () => {
+  const item = { repo: "owner/repo", number: 5, runUrl: "https://github.com/owner/repo/actions/runs/1" };
+  const later = { kind: "usage limit", resetsAt: "2026-11-23T00:00:00.000Z" } as const;
+
+  it("opens the ticket when no pause is open", () => {
+    expect(planBudgetPauseTicket(timed, { open: false }, item)).toEqual([
+      { kind: "open ticket", title: pauseTitle(timed), body: pauseTicketBody(timed) },
+    ]);
+  });
+
+  it("comments on the open ticket, naming the item and the run", () => {
+    const actions = planBudgetPauseTicket(timed, { open: true, ticket: 7, until: new Date(timed.resetsAt) }, item);
+
+    expect(actions).toEqual([
+      {
+        kind: "comment on ticket",
+        ticket: 7,
+        body: expect.stringContaining("owner/repo#5"),
+      },
+    ]);
+    expect(actions[0]).toMatchObject({ body: expect.stringContaining(item.runUrl) });
+  });
+
+  it("moves an open timed pause to a later reset, so the requeue run does not close it early", () => {
+    expect(planBudgetPauseTicket(later, { open: true, ticket: 7, until: new Date(timed.resetsAt) }, item)).toEqual([
+      { kind: "update ticket", ticket: 7, title: pauseTitle(later), body: pauseTicketBody(later) },
+      { kind: "comment on ticket", ticket: 7, body: expect.any(String) },
+    ]);
+  });
+
+  it("turns an open timed pause into one with no reset when credit runs out", () => {
+    expect(planBudgetPauseTicket({ kind: "out of credit" }, { open: true, ticket: 7, until: new Date(timed.resetsAt) }, item)).toContainEqual({
+      kind: "update ticket",
+      ticket: 7,
+      title: "Out of Claude credit",
+      body: pauseTicketBody({ kind: "out of credit" }),
+    });
+  });
+
+  it("never shortens an open pause", () => {
+    expect(planBudgetPauseTicket(timed, { open: true, ticket: 7, until: new Date(later.resetsAt) }, item)).toHaveLength(1);
+    expect(planBudgetPauseTicket(timed, { open: true, ticket: 7 }, item)).toHaveLength(1);
   });
 });
 
