@@ -5,12 +5,12 @@
 // It writes `verdict` (push or refuse) and `reasons` to $GITHUB_OUTPUT and
 // push-guard.json to OUTPUT_DIR. It exits non-zero only when it cannot scan.
 import { execFileSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { containsClaudeToken } from "./claude-token-search";
 import { required, writeJson } from "./common";
+import { writeOutputs } from "./gh";
 import { installGitleaks, runGitleaks } from "./gitleaks";
 import { pushVerdict, refusalText } from "./push-guard";
 
@@ -34,15 +34,6 @@ const commitsText = (bareRepoDir: string, range: string): string =>
   git(bareRepoDir, [
     "log", "-p", "-m", "--text", "--no-textconv", "--no-ext-diff", "--no-color", "--format=%H%n%B", range,
   ]);
-
-const writeOutputs = (outputs: Readonly<Record<string, string>>): void => {
-  const outputFile = process.env.GITHUB_OUTPUT;
-  if (!outputFile) return;
-  for (const [name, value] of Object.entries(outputs)) {
-    const delimiter = `EOF_${randomUUID()}`;
-    fs.appendFileSync(outputFile, `${name}<<${delimiter}\n${value}\n${delimiter}\n`);
-  }
-};
 
 const repoDir = required("REPO_DIR");
 const tokenSha256 = required("CLAUDE_TOKEN_SHA256");

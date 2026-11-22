@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { Budget, Credential } from "./budget";
-import type { bwrap } from "@ai-hero/sandcastle/sandboxes/bwrap";
+import type { bwrap, BwrapOptions } from "@ai-hero/sandcastle/sandboxes/bwrap";
 import { CeilingHit, sandboxedAgent } from "./common";
 import type { AgentTask } from "./tasks";
 
@@ -83,7 +83,7 @@ describe("the agent launcher", () => {
     const { sandbox } = sandboxedAgent("implement", {
       budget: budget("subscription"),
       hostEnv: cleanHost,
-      sandboxProvider: ((options) => ({ mounts: options?.mounts })) as typeof bwrap,
+      sandboxProvider: ((options?: BwrapOptions) => ({ mounts: options?.mounts })) as unknown as typeof bwrap,
       mounts: ["/home/runner/work/_temp/agent-io"],
     });
 
