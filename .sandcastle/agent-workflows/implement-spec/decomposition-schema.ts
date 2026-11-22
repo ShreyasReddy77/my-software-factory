@@ -1,8 +1,8 @@
 import { z } from "zod/v4";
 
-// The first loop's answer: one spec turned into an ordered queue of tickets.
-// agent-implement-spec.yml creates one GitHub issue per entry, in `position`
-// order, and the chain then works through them one at a time.
+// The split's answer: one spec turned into an ordered queue of tickets.
+// write-queue.ts creates one GitHub issue per entry, in `position` order, and
+// each later `agent:implement-spec` label builds the next ready one.
 export const specDecompositionSchema = z
   .strictObject({
     tickets: z
@@ -13,7 +13,7 @@ export const specDecompositionSchema = z
             .int()
             .min(1)
             .describe(
-              "Build order, starting at 1. The chain always takes the lowest open position whose dependencies are closed."
+              "Build order, starting at 1. Each build takes the lowest open position whose dependencies are closed."
             ),
           title: z
             .string()
