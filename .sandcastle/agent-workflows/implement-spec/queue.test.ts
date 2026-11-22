@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { queueIssues, surveyQueue, type QueueIssue } from "./queue";
+import { queueIssues, surveyQueue, type QueueIssue, type SpecDecomposition } from "./queue";
 
 const ticket = (number: number, position: number, dependsOn: readonly number[], extra: Partial<QueueIssue> = {}): QueueIssue => ({
   number,
@@ -54,12 +54,12 @@ describe("surveying a spec's queue", () => {
 });
 
 describe("writing a spec's queue as issues", () => {
-  const decomposition = {
+  const decomposition: SpecDecomposition = {
     tickets: [
       { position: 1, title: "First", body: "## What\n\nA.", shape: "service-module", depends_on: [] },
       { position: 2, title: "Second", body: "## What\n\nB.", shape: "route-only", depends_on: [1] },
     ],
-  } as const;
+  };
 
   it("labels each ticket with its spec's queue label and links the spec", () => {
     const issues = queueIssues(decomposition, 7);
