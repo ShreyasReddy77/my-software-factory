@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vitest";
 import adminPermission from "./fixtures/collaborator-permission-admin.json" with { type: "json" };
+import readPermission from "./fixtures/collaborator-permission-read.json" with { type: "json" };
+import botLabelled from "./fixtures/issue-events-labeled-by-bot.json" with { type: "json" };
+import personLabelled from "./fixtures/issue-events-labeled-by-person.json" with { type: "json" };
 import runList from "./fixtures/workflow-runs.json" with { type: "json" };
-import { decideGate, type GateInput, type WorkflowRun } from "./gate";
+import {
+  decideGate,
+  findLabeller,
+  type GateInput,
+  type GateItem,
+  type IssueEvent,
+  type WorkflowRun,
+} from "./gate";
 import type { LockKey } from "./run-name";
 
 const repo = "owner/repo";
@@ -231,6 +241,65 @@ describe("the gate decision", () => {
         })
       );
       expect(decision).toEqual({ kind: "queued", reason: "lock" });
+    });
+  });
+
+  describe("the trigger label", () => {
+    const labelledBy = (events: readonly IssueEvent[], permission: string): GateItem => {
+      const relabelled = events.map((event) => ({ ...event, label: { ...event.label, name: "agent:implement" } }));
+      const labeller = findLabeller(relabelled, "agent:implement");
+      return { labels: ["agent:implement"], labeller: labeller && { ...labeller, permission } };
+    };
+
+    it("ends quietly when the label is no longer on the item, even while a pause is open", () => {
+      const item = { ...input().item, labels: ["agent:in-progress"] };
+      expect(decideGate(input({ item, budgetPause: { open: true } }))).toEqual({
+        kind: "quiet end",
+        reason: "trigger label missing",
+      });
+    });
+
+    it("proceeds on a label applied by a person with write access", () => {
+      const item = labelledBy(personLabelled, adminPermission.permission);
+      expect(item.labeller?.login).toBe(adminPermission.user.login);
+      expect(decideGate(input({ item }))).toEqual({ kind: "proceed" });
+    });
+
+    it("ends quietly on a label applied by a person without write access", () => {
+      const item = labelledBy(personLabelled, readPermission.permission);
+      expect(decideGate(input({ item, budgetPause: { open: true } }))).toEqual({
+        kind: "quiet end",
+        reason: "untrusted labeller",
+      });
+    });
+
+    it("ends quietly when no labelled event names the label", () => {
+      expect(findLabeller(personLabelled, "agent:implement")).toBeUndefined();
+      const item = labelledBy([], adminPermission.permission);
+      expect(decideGate(input({ item }))).toEqual({ kind: "quiet end", reason: "untrusted labeller" });
+    });
+
+    it("trusts the factory's App as a labeller", () => {
+      const appEvents = botLabelled.map((event) => ({ ...event, actor: { ...event.actor, login: "agent-factory[bot]" } }));
+      expect(decideGate(input({ item: labelledBy(appEvents, "write") }))).toEqual({ kind: "proceed" });
+    });
+
+    it("refuses other bots, even with write access", () => {
+      expect(decideGate(input({ item: labelledBy(botLabelled, "admin") }))).toEqual({
+        kind: "quiet end",
+        reason: "untrusted labeller",
+      });
+    });
+
+    it("reads the latest labelled event for the label", () => {
+      const [event] = personLabelled;
+      const events: IssueEvent[] = [
+        { ...event!, label: { ...event!.label, name: "agent:implement" } },
+        { ...event!, event: "unlabeled", label: { ...event!.label, name: "agent:implement" } },
+        { ...botLabelled[0]!, label: { ...botLabelled[0]!.label, name: "agent:implement" } },
+        { ...event!, label: { ...event!.label, name: "agent:review" } },
+      ];
+      expect(findLabeller(events, "agent:implement")).toEqual({ login: "github-actions[bot]", type: "Bot" });
     });
   });
 });

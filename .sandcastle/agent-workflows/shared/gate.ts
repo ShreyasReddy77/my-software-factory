@@ -1,5 +1,6 @@
 import type { Budget } from "./budget";
 import { parseRunName, type LockKey, type RunName } from "./run-name";
+import { triggerLabel } from "./labels";
 import type { AgentTask } from "./tasks";
 
 export type WorkflowRun = {
@@ -13,6 +14,20 @@ export type WorkflowRun = {
 export type RunList = {
   readonly repo: string;
   readonly runs: readonly WorkflowRun[];
+};
+
+export type IssueEvent = {
+  readonly event: string;
+  readonly label?: { readonly name: string } | null;
+  readonly actor: { readonly login: string; readonly type: string } | null;
+};
+
+export const findLabeller = (
+  events: readonly IssueEvent[],
+  label: string
+): Pick<Labeller, "login" | "type"> | undefined => {
+  const actor = events.findLast((event) => event.event === "labeled" && event.label?.name === label)?.actor;
+  return actor ? { login: actor.login, type: actor.type } : undefined;
 };
 
 export type Labeller = {
@@ -40,6 +55,7 @@ export type GateInput = {
 
 export type GateDecision =
   | { readonly kind: "proceed" }
+  | { readonly kind: "quiet end"; readonly reason: "trigger label missing" | "untrusted labeller" }
   | { readonly kind: "paused" }
   | { readonly kind: "queued"; readonly reason: "daily cap" | "concurrency" | "lock" };
 
@@ -77,10 +93,22 @@ const lockHeldByEarlierRun = (runs: readonly NamedRun[], input: GateInput): bool
   );
 };
 
+const writeAccess: readonly string[] = ["admin", "maintain", "write"];
+
+const trustedLabeller = (labeller: Labeller | undefined, factoryAppLogin: string): boolean => {
+  if (labeller === undefined) return false;
+  if (labeller.login === factoryAppLogin) return true;
+  return labeller.type === "User" && writeAccess.includes(labeller.permission);
+};
+
 const midnightUtc = (now: Date): number =>
   Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
 
 export const decideGate = (input: GateInput): GateDecision => {
+  if (!input.item.labels.includes(triggerLabel(input.task)))
+    return { kind: "quiet end", reason: "trigger label missing" };
+  if (!trustedLabeller(input.item.labeller, input.factoryAppLogin))
+    return { kind: "quiet end", reason: "untrusted labeller" };
   if (input.budgetPause.open) return { kind: "paused" };
   const runs = namedRuns(input.runLists);
   const agentRuns = runs.filter((run) => run.runName.agentRun);
