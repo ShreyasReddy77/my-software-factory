@@ -104,19 +104,29 @@ export const trustedLabeller = (labeller: Labeller | undefined, factoryAppLogin:
 const midnightUtc = (now: Date): number =>
   Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
 
+export type AgentRunCounts = { readonly todaysRuns: number; readonly runsInFlight: number };
+
+// Today's agent runs are those created since midnight UTC; runs in flight are
+// every agent run not yet completed, whenever it started.
+export const countAgentRuns = (runLists: readonly RunList[], now: Date): AgentRunCounts => {
+  const agentRuns = namedRuns(runLists).filter((run) => run.runName.agentRun);
+  const today = midnightUtc(now);
+  return {
+    todaysRuns: agentRuns.filter((run) => Date.parse(run.created_at) >= today).length,
+    runsInFlight: agentRuns.filter(inFlight).length,
+  };
+};
+
 export const decideGate = (input: GateInput): GateDecision => {
   if (!input.item.labels.includes(triggerLabel(input.task)))
     return { kind: "quiet end", reason: "trigger label missing" };
   if (!trustedLabeller(input.item.labeller, input.factoryAppLogin))
     return { kind: "quiet end", reason: "untrusted labeller" };
   if (input.budgetPause.open) return { kind: "paused" };
+  const counts = countAgentRuns(input.runLists, input.now);
+  if (counts.todaysRuns >= input.budget.dailyRuns) return { kind: "queued", reason: "daily cap" };
+  if (counts.runsInFlight >= input.budget.concurrentRuns) return { kind: "queued", reason: "concurrency" };
   const runs = namedRuns(input.runLists);
-  const agentRuns = runs.filter((run) => run.runName.agentRun);
-  const today = midnightUtc(input.now);
-  const todaysRuns = agentRuns.filter((run) => Date.parse(run.created_at) >= today);
-  if (todaysRuns.length >= input.budget.dailyRuns) return { kind: "queued", reason: "daily cap" };
-  if (agentRuns.filter(inFlight).length >= input.budget.concurrentRuns)
-    return { kind: "queued", reason: "concurrency" };
   if (lockHeldByEarlierRun(runs, input)) return { kind: "queued", reason: "lock" };
   return { kind: "proceed" };
 };
