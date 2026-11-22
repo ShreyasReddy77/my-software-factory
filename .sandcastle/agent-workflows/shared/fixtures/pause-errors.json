@@ -1,0 +1,14 @@
+{
+  "_source": "Claude error texts as published, not yet captured from a factory run. Claude Code: https://code.claude.com/docs/en/errors (session, weekly and model-family limits, the warning, the server throttle). Anthropic API: the credit-balance and spend-limit error bodies. Add captured texts beside these as real runs produce them.",
+  "sessionLimit": "You've hit your session limit · resets 3:45pm",
+  "weeklyLimit": "You've hit your weekly limit · resets Mon 12:00am",
+  "opusLimit": "You've hit your Opus limit · resets 8pm",
+  "modelLimitNoReset": "You've hit your Sonnet limit",
+  "creditTooLow": "API Error: 400 {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.\"}}",
+  "spendLimit": "API Error: 429 {\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\",\"message\":\"You have reached your specified API usage limits. You will regain access on 2026-12-01 at 00:00 UTC.\"}}",
+  "usageCreditsExhausted": "You're out of usage credits",
+  "usageWarning": "You've used 85% of your session limit · resets 3:45pm",
+  "serverThrottle": "API Error: Server is temporarily limiting requests (not your usage limit)",
+  "overloaded": "API Error: 529 {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}",
+  "unrelated": "Error: ENOENT: no such file or directory, open '/tmp/agent-io/ticket.md'"
+}
