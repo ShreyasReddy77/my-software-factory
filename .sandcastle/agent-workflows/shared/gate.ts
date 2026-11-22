@@ -95,7 +95,7 @@ const lockHeldByEarlierRun = (runs: readonly NamedRun[], input: GateInput): bool
 
 const writeAccess: readonly string[] = ["admin", "maintain", "write"];
 
-const trustedLabeller = (labeller: Labeller | undefined, factoryAppLogin: string): boolean => {
+export const trustedLabeller = (labeller: Labeller | undefined, factoryAppLogin: string): boolean => {
   if (labeller === undefined) return false;
   if (labeller.login === factoryAppLogin) return true;
   return labeller.type === "User" && writeAccess.includes(labeller.permission);

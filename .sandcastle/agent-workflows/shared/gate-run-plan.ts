@@ -2,7 +2,7 @@ import type { GateDecision } from "./gate";
 import { labels, triggerLabel } from "./labels";
 import { statusMarker, writeMarker } from "./marker";
 import type { OutcomeRecord } from "./run-summary";
-import type { AgentTask } from "./tasks";
+import { lockScopes, type AgentTask } from "./tasks";
 
 export type AgentRunStart = {
   readonly factoryRepo: string;
@@ -16,11 +16,14 @@ export type GateRunContext = {
   readonly task: AgentTask;
   readonly item: { readonly repo: string; readonly number: number };
   readonly agentRun: AgentRunStart;
+  // A per-repo task's batch, the labelled item among it; claimed together.
+  readonly batch?: readonly number[];
 };
 
 export type GateAction =
   | { readonly kind: "comment"; readonly body: string }
   | { readonly kind: "add label" | "remove label"; readonly label: string }
+  | { readonly kind: "claim batch"; readonly numbers: readonly number[]; readonly add: string; readonly remove: string }
   | {
       readonly kind: "dispatch agent run";
       readonly factoryRepo: string;
@@ -54,13 +57,39 @@ const nextLabels = {
   paused: labels.paused,
 } as const;
 
-const dispatch = ({ factoryRepo, workflow, ref, factorySha, jobTimeoutMinutes }: AgentRunStart, item: number): GateAction => ({
-  kind: "dispatch agent run",
-  factoryRepo,
-  workflow,
-  ref,
-  inputs: { factory_sha: factorySha, issue: String(item), job_timeout: String(jobTimeoutMinutes) },
-});
+const itemInput = ({ task, item, batch }: GateRunContext): Record<string, string> => {
+  switch (lockScopes[task]) {
+    case "repo":
+      return { batch: JSON.stringify(batch ?? [item.number]) };
+    case "pr":
+      return { pr: String(item.number) };
+    case "ticket":
+      return { issue: String(item.number) };
+  }
+};
+
+const dispatch = (context: GateRunContext): GateAction => {
+  const { factoryRepo, workflow, ref, factorySha, jobTimeoutMinutes } = context.agentRun;
+  return {
+    kind: "dispatch agent run",
+    factoryRepo,
+    workflow,
+    ref,
+    inputs: { factory_sha: factorySha, ...itemInput(context), job_timeout: String(jobTimeoutMinutes) },
+  };
+};
+
+const batchText = (batch: readonly number[] | undefined): string =>
+  batch === undefined ? "" : ` Its batch holds ${batch.length} ${batch.length === 1 ? "issue" : "issues"}.`;
+
+// A batch is claimed together; any other item swaps its own trigger label.
+const swapLabels = (decision: GateDecision, { task, batch }: GateRunContext, nextLabel: string): GateAction[] =>
+  decision.kind === "proceed" && batch !== undefined
+    ? [{ kind: "claim batch", numbers: batch, add: nextLabel, remove: triggerLabel(task) }]
+    : [
+        { kind: "add label", label: nextLabel },
+        { kind: "remove label", label: triggerLabel(task) },
+      ];
 
 const outcomeOf = (decision: GateDecision): OutcomeRecord["outcome"] => {
   switch (decision.kind) {
@@ -75,22 +104,23 @@ const outcomeOf = (decision: GateDecision): OutcomeRecord["outcome"] => {
 
 // Marker first and trigger label last, so a gate run that stops part-way
 // leaves the trigger on and re-adding it is still the retry.
-export const planGateRun = (decision: GateDecision, { task, item, agentRun }: GateRunContext): GateRunPlan => {
+export const planGateRun = (decision: GateDecision, context: GateRunContext): GateRunPlan => {
+  const { task, item } = context;
   const record = {
     task: `${task} gate run`,
     targetRepo: item.repo,
-    item: { kind: "issue", number: item.number },
+    item: { kind: lockScopes[task] === "pr" ? "pr" : "issue", number: item.number },
     outcome: outcomeOf(decision),
   } as const;
   const text = waitingText(decision, task);
   if (decision.kind === "quiet end" || text === undefined) return { actions: [], record };
   const nextLabel = nextLabels[decision.kind];
+  const claim = decision.kind === "proceed" ? batchText(context.batch) : "";
   return {
     actions: [
-      { kind: "comment", body: `${text} ${writeMarker(triggerLabel(task))} ${statusMarker}` },
-      { kind: "add label", label: nextLabel },
-      { kind: "remove label", label: triggerLabel(task) },
-      ...(decision.kind === "proceed" ? [dispatch(agentRun, item.number)] : []),
+      { kind: "comment", body: `${text}${claim} ${writeMarker(triggerLabel(task))} ${statusMarker}` },
+      ...swapLabels(decision, context, nextLabel),
+      ...(decision.kind === "proceed" ? [dispatch(context)] : []),
     ],
     record: { ...record, nextLabel },
   };

@@ -104,3 +104,74 @@ describe("the agent run's job timeout", () => {
     expect(jobTimeoutMinutes(45)).toBe(60);
   });
 });
+
+describe("the gate run's plan for review, under a per-PR lock", () => {
+  const review: GateRunContext = {
+    ...context,
+    task: "review",
+    item: { repo: "owner/repo", number: 9 },
+    agentRun: { ...context.agentRun, workflow: "review-agent.yml", jobTimeoutMinutes: 30 },
+  };
+
+  it("on proceed, claims the PR and starts the agent run with the PR's number", () => {
+    const plan = planGateRun({ kind: "proceed" }, review);
+
+    expect(plan.actions.slice(1)).toEqual([
+      { kind: "add label", label: "agent:in-progress" },
+      { kind: "remove label", label: "agent:review" },
+      {
+        kind: "dispatch agent run",
+        factoryRepo: "owner/factory",
+        workflow: "review-agent.yml",
+        ref: "main",
+        inputs: { factory_sha: "0123456789abcdef0123456789abcdef01234567", pr: "9", job_timeout: "30" },
+      },
+    ]);
+  });
+
+  it("records the PR as the run summary's item, under review's own task name", () => {
+    expect(planGateRun({ kind: "proceed" }, review).record.task).toBe("review gate run");
+    expect(planGateRun({ kind: "queued", reason: "lock" }, review).record.item).toEqual({ kind: "pr", number: 9 });
+  });
+});
+
+describe("the gate run's plan for explore, under a per-repo lock", () => {
+  const explore: GateRunContext = {
+    ...context,
+    task: "explore",
+    item: { repo: "owner/repo", number: 7 },
+    agentRun: { ...context.agentRun, workflow: "explore-agent.yml", jobTimeoutMinutes: 30 },
+    batch: [3, 7, 12],
+  };
+
+  it("on proceed, writes the marker on the labelled issue, claims the whole batch, then starts one agent run for it", () => {
+    const plan = planGateRun({ kind: "proceed" }, explore);
+
+    expect(plan.actions).toEqual([
+      { kind: "comment", body: expect.stringContaining("<!-- factory:restart-as v1 agent:explore -->") },
+      { kind: "claim batch", numbers: [3, 7, 12], add: "agent:in-progress", remove: "agent:explore" },
+      {
+        kind: "dispatch agent run",
+        factoryRepo: "owner/factory",
+        workflow: "explore-agent.yml",
+        ref: "main",
+        inputs: { factory_sha: "0123456789abcdef0123456789abcdef01234567", batch: "[3,7,12]", job_timeout: "30" },
+      },
+    ]);
+  });
+
+  it("says in the claim comment how many issues the batch holds", () => {
+    const comment = planGateRun({ kind: "proceed" }, explore).actions[0];
+
+    expect(comment).toMatchObject({ body: expect.stringContaining("3 issues") });
+  });
+
+  it("on queued, queues only the labelled issue; the rest keep agent:explore for the next batch", () => {
+    const plan = planGateRun({ kind: "queued", reason: "lock" }, explore);
+
+    expect(plan.actions.slice(1)).toEqual([
+      { kind: "add label", label: "factory:queued" },
+      { kind: "remove label", label: "agent:explore" },
+    ]);
+  });
+});
