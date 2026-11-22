@@ -251,3 +251,24 @@ jobs:
           BRANCH: ${{ env.BRANCH || 'unknown' }}
           FALLBACK_BRANCH: ${{ env.FALLBACK_BRANCH || 'unknown' }}
         run: factory/.sandcastle/node_modules/.bin/tsx factory/.sandcastle/agent-workflows/review/report.ts
+
+  requeue:
+    needs: agent
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Mint the requeue starter's token
+        id: token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+          owner: ShreyasReddy77
+          repositories: my-software-factory
+          permission-actions: write
+
+      - name: Start the requeue run
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: gh workflow run requeue.yml --repo "$FACTORY_REPO" --ref main
