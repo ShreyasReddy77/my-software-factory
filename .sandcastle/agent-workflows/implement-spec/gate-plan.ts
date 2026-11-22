@@ -51,7 +51,9 @@ const onSpec = (input: SpecGateInput, decision: GateDecision): SpecGatePlan => {
   });
   return {
     ...plan,
-    actions: plan.actions.flatMap((action) => (action.kind === "dispatch agent run" ? [] : [{ ...action, on: spec.number }])),
+    actions: plan.actions.flatMap((action) =>
+      action.kind === "dispatch agent run" || action.kind === "claim batch" ? [] : [{ ...action, on: spec.number }]
+    ),
   };
 };
 

@@ -4,12 +4,12 @@ pull request #{{PR_NUMBER}}, and you know only what you read.
 Review it with the code-review skill, .agents/skills/code-review/SKILL.md:
 
 - fixed point: `origin/{{BASE_REF}}`
-- spec: /tmp/review-spec.md
+- spec: {{AGENT_IO_DIR}}/review-spec.md
 - standards: CODING_STANDARDS.md
 
 Brief each sub-agent with only what its axis needs: the Standards agent gets
-CODING_STANDARDS.md and app/modules/README.md; the Spec agent gets the spec.
-Neither re-reads AGENTS.md, package.json or the agent-browser doc.
+CODING_STANDARDS.md; the Spec agent gets the spec.
+Neither re-reads AGENTS.md, or package.json.
 
 ## Be relentless about fixing
 
@@ -35,7 +35,7 @@ Every finding you leave unfixed becomes an inline comment on its file and
 line, and carries the whole detail there. You will be asked for them as
 structured output.
 
-Write your verdict on the branch, after your fixes, to /tmp/review-verdict.md.
+Write your verdict, after your fixes, to {{AGENT_IO_DIR}}/review-verdict.md.
 It is the summary; the inline comments are the detail, so never repeat a left
 finding's explanation in it:
 
@@ -49,7 +49,3 @@ finding's explanation in it:
     ## Rules this review wanted and could not find
     Anything you wanted to fail the change for that no standard covers.
     The retro reads this list.
-
-When the change shows in the UI, save screenshots as PNGs in /tmp/evidence/.
-Reference each in the verdict by its absolute path, e.g.
-`![after](/tmp/evidence/after.png)`. The workflow uploads them.
