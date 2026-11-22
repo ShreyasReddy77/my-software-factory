@@ -136,6 +136,10 @@ _Avoid_: run title, job name
 The thing a lock covers, written into a run name: a ticket, a PR, or a whole target repo.
 _Avoid_: concurrency key, mutex name
 
+**Push guard**:
+The host step that checks the agent's new commits before anything is pushed, and refuses them if they carry a secret, the Claude token or any change under `.github/workflows/`. A refusal pushes nothing and is a failed try. It finds the Claude token by its hash, so it never holds the token itself.
+_Avoid_: secret scan (one of its checks), pre-push hook (it runs on the host, not in git)
+
 **Marker**:
 A hidden comment the factory leaves on a waiting item, naming the trigger label it restarts as. Each release reads every marker form the previous release wrote.
 _Avoid_: tag, flag, state comment

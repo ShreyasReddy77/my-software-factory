@@ -44,7 +44,7 @@ Products the tasks build on, below the slots:
 | Claude credential | A subscription OAuth token or an API key, chosen in `budget.yml` | [Budget] |
 | Credential relay | The factory's own ~80-line Node relay, no dependencies | [Credential relay] |
 | GitHub credentials | One GitHub App (per-step tokens), plus one shim token per owned repo | [Security model] |
-| Secret scan in the push step | gitleaks, pinned to an exact version and run on the agent's new commits only, plus a literal search for the Claude token | [Security model], Foundation session |
+| Secret scan in the push step | gitleaks, pinned to an exact version and run on the agent's new commits only, plus a search for the Claude token by its hash | [Security model], Foundation session |
 
 ## Cross-cutting rules
 
@@ -94,7 +94,7 @@ Each rule holds for every task unless the task's section says otherwise.
 - **The agent runs under `bwrap()` with no GitHub credential anywhere it can read.** The checkout uses `persist-credentials: false`, and the host step that launches Sandcastle carries no secret at all, because `/proc/1/environ` exposes that host step's environment inside `bwrap()`. *Why:* the [Sandbox timing] spike read both leaks. `bwrap()` costs 5–17 s of setup per run against `docker()`'s ~50 s warm or ~2 min cold.
 - **The Claude token stays behind a relay.** A relay started in an earlier, separate host step receives the real token on stdin and forwards `POST /v1/messages`. The agent gets `ANTHROPIC_BASE_URL` pointing at it and a useless stand-in token. The relay passes on only the credential `budget.yml` names. *Why:* the [Credential relay] test found the real token nowhere in the sandbox. The agent can still spend the token while the run lasts, so the budget's caps remain the guard. The token-inside fallback is dropped. ([Security model], amended by [Credential relay])
 - **Keep `ANTHROPIC_API_KEY` unset** wherever a subscription token is in use: it silently outranks the OAuth token. ([Claude Pro limits])
-- **The push step guards every push.** On the host, before pushing, it scans the agent's new commits for secrets (the Claude token's literal value, gitleaks, and, once private targets exist, their names; *see [Gaps](#gaps) G5*) and for any change under `.github/workflows/`. If either trips, it pushes nothing, comments, and counts a failed try. Otherwise it pushes and opens or updates the PR with an App token. ([Security model], [Private maps]) Fix-CI's push step also refuses commits that remove a test or add a skip ([Fix-CI and address-review]).
+- **The push step guards every push.** On the host, before pushing, it scans the agent's new commits for secrets (the Claude token, found by hashing every `sk-ant-` string and comparing with the hash the relay's host step gives it, so the push step never holds the token; gitleaks; and, once private targets exist, their names; *see [Gaps](#gaps) G5*) and for any change under `.github/workflows/`. If either trips, it pushes nothing, comments, and counts a failed try. Otherwise it pushes and opens or updates the PR with an App token. ([Security model], [Private maps]) Fix-CI's push step also refuses commits that remove a test or add a skip ([Fix-CI and address-review]).
 - **The factory never changes `.github/workflows/` on any repo,** its own included. A ticket that needs one goes back to the human. *Why:* the App has no Workflows permission, so no factory change can widen its own reach. ([Security model], [Self-improvement])
 - **A target's own Claude settings:** owned repos obey `.claude/settings.json`, hooks included. Upstream repos' settings are ignored (hooks, permission changes, extra tools); their style is still enforced through the checks and the ICM map. Everywhere, the target's `CLAUDE.md` is obeyed or ignored section by section, as the ICM map says. ([Security model], [ICM map prototype])
 - **Accepted for v1:** egress stays open, and upstream checks run strangers' code inside the sandbox. The planned upgrade is a paid microVM sandbox, so the sandbox provider is a single setting. ([Security model])
@@ -468,7 +468,7 @@ Built in order, each its own `/to-spec` → `/to-tickets` → `/implement-spec` 
 **Delivers:**
 - The GitHub App with [its full permission set](#credentials-and-the-sandbox) and per-host-step tokens; `FACTORY_PAT` retired.
 - Agents under `bwrap()` on pinned `ubuntu-24.04`, with `persist-credentials: false`, no secret on the launching host step, and the credential relay.
-- The push step's scans (gitleaks, the Claude token's literal value, workflow changes).
+- The push step's scans (gitleaks, the Claude token found by its hash, workflow changes).
 - `budget.yml` in [its settled shape](#budget): credential, models, caps, priority, per-task ceilings with the two time limits. The budget-pause ticket, `factory:queued`/`factory:paused`, the pre-run budget gates, and the requeue run (restarting queued and paused items, closing timed pauses).
 - Gate runs that start agent runs, run names carrying lock keys, and locks that queue instead of dropping.
 - The three-clocks rule: the requeue run is the only clock Foundation builds; the watch and weekly clocks arrive with the Trust ladder.
