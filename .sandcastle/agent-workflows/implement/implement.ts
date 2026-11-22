@@ -9,7 +9,7 @@ import { claudeAgent } from "../shared/common";
 // workflow steps after this one do, where you can read them.
 await sandcastle.run({
   name: "implement",
-  agent: claudeAgent(),
+  agent: claudeAgent("implement"),
   sandbox: noSandbox(),
   logging: { type: "stdout" },
   promptFile: path.join(import.meta.dirname, "prompt.md"),

@@ -1,6 +1,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as sandcastle from "@ai-hero/sandcastle";
+import { loadBudget, type Credential } from "./budget";
+import type { AgentTask } from "./tasks";
 
 export const outputDir = (): string => process.env.OUTPUT_DIR ?? "/tmp";
 
@@ -21,16 +23,20 @@ export const writeJson = (filename: string, value: unknown): void => {
   );
 };
 
-// The one agent every factory workflow runs. It authenticates with a Claude
-// subscription. To bill the API instead, pass ANTHROPIC_API_KEY here and in
-// the workflow's env in place of CLAUDE_CODE_OAUTH_TOKEN.
-//
-// Sandcastle runs every agent with its permission checks skipped, so it can
-// use any tool. Claude Code also accepts `permissionMode: "auto"` here for
-// AI-mediated approvals instead (Claude only; other agents don't offer it).
-export const claudeAgent = () =>
-  sandcastle.claudeCode("claude-opus-5-5", {
-    env: {
-      CLAUDE_CODE_OAUTH_TOKEN: required("CLAUDE_CODE_OAUTH_TOKEN"),
-    },
+export const credentialEnv = (
+  credential: Credential,
+  claudeToken: string
+): Readonly<Record<string, string>> =>
+  credential === "subscription"
+    ? { CLAUDE_CODE_OAUTH_TOKEN: claudeToken }
+    : { ANTHROPIC_API_KEY: claudeToken };
+
+// The one agent every factory workflow runs, with the model and credential
+// budget.yml names for the task. The Claude token secret reaches this step as
+// CLAUDE_CODE_OAUTH_TOKEN whichever credential it holds.
+export const claudeAgent = (task: AgentTask) => {
+  const budget = loadBudget();
+  return sandcastle.claudeCode(budget.tasks[task].model, {
+    env: credentialEnv(budget.credential, required("CLAUDE_CODE_OAUTH_TOKEN")),
   });
+};

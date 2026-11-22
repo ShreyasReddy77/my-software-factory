@@ -10,7 +10,7 @@ import { specDecompositionSchema } from "./decomposition-schema";
 // what actually creates them.
 const result = await runWithExtraction({
   name: "decompose",
-  agent: claudeAgent(),
+  agent: claudeAgent("implement-spec"),
   sandbox: noSandbox(),
   logging: { type: "stdout" },
   promptFile: path.join(import.meta.dirname, "decompose-prompt.md"),

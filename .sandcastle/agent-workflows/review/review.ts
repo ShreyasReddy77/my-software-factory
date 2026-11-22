@@ -16,7 +16,7 @@ const BASE_REF = required("BASE_REF");
 // the inline comments, and marks the PR ready.
 const result = await runWithExtraction({
   name: "review",
-  agent: claudeAgent(),
+  agent: claudeAgent("review"),
   sandbox: noSandbox(),
   logging: { type: "stdout" },
   promptFile: path.join(import.meta.dirname, "prompt.md"),
