@@ -98,9 +98,14 @@ busy.
 
 ## Runs never collide or lose work
 
-- Give every job a `concurrency` group keyed on the ticket or PR it works on,
-  with `cancel-in-progress: false`. Labels that are not the trigger get a
-  throwaway group.
+- Lock with run names, never with Actions `concurrency:` groups. A
+  concurrency group keeps one waiting run and cancels the rest, so a third
+  label is lost. Every run's name carries its lock key, written and parsed by
+  `shared/run-name.ts`; the gate run lists the runs in flight and, when an
+  earlier one holds the same key, labels the item `factory:queued` and ends.
+  Runs for labels that are not the trigger get a name that parses as no lock
+  key. Only the requeue run keeps a concurrency group, because a dropped copy
+  of it loses nothing.
 - Every run pushes to a branch of its own, suffixed with the run id.
 - Every job sets `timeout-minutes`.
 

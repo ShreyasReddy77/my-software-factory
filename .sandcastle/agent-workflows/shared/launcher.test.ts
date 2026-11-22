@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { Budget, Credential } from "./budget";
-import type { bwrap } from "@ai-hero/sandcastle/sandboxes/bwrap";
+import type { bwrap, BwrapOptions } from "@ai-hero/sandcastle/sandboxes/bwrap";
 import { CeilingHit, sandboxedAgent } from "./common";
 import type { AgentTask } from "./tasks";
 
@@ -77,6 +77,19 @@ describe("the agent launcher", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("shows the agent only the run's own folders beyond its worktree, at their host paths", () => {
+    const { sandbox } = sandboxedAgent("implement", {
+      budget: budget("subscription"),
+      hostEnv: cleanHost,
+      sandboxProvider: ((options?: BwrapOptions) => ({ mounts: options?.mounts })) as unknown as typeof bwrap,
+      mounts: ["/home/runner/work/_temp/agent-io"],
+    });
+
+    expect(sandbox).toEqual({
+      mounts: [{ hostPath: "/home/runner/work/_temp/agent-io", sandboxPath: "/home/runner/work/_temp/agent-io" }],
+    });
   });
 
   it.each([
