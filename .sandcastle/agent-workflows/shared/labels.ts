@@ -16,3 +16,6 @@ export const labels = {
   paused: "factory:paused",
   needsHuman: "factory:needs-human",
 } as const;
+
+// Marks a ticket in a spec's queue. Implement-spec creates it per spec.
+export const specQueueLabel = (spec: number): string => `spec:${spec}`;
