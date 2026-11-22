@@ -40,6 +40,18 @@ describe("reporting a split", () => {
     expect(report).toMatchObject({ block: true, outcome: { kind: "ceiling hit" } });
   });
 
+  it("on a Claude limit, pauses the spec to restart as implement-spec, as no try", () => {
+    const report = reportSplit({
+      agentEnd: { kind: "paused", pause: { kind: "out of credit" }, message: "Credit balance is too low" },
+      spec: 7,
+      hostStepFailed: false,
+      runUrl,
+    });
+
+    expect(report).toMatchObject({ block: false, outcome: { kind: "paused" }, nextLabel: "factory:paused", pause: { kind: "out of credit" } });
+    expect(report.comment).toContain("<!-- factory:restart-as v1 agent:implement-spec -->");
+  });
+
   it("when a host step failed after the agent finished, blocks the spec as a failed try", () => {
     const report = reportSplit({ agentEnd: { kind: "finished" }, written: 2, spec: 7, hostStepFailed: true, runUrl });
 
@@ -77,6 +89,22 @@ describe("reporting a build", () => {
     const report = reportBuild(ceiling, { prUrl, handedOff: false, hostStepFailed: false, runUrl, spec: 7 });
 
     expect(report).toMatchObject({ block: true, close: false, outcome: { kind: "ceiling hit" } });
+  });
+
+  it("on a Claude limit, frees the ticket and pauses the spec, which restarts as implement-spec", () => {
+    const paused = decideAgentRunEnd({
+      agentEnd: { kind: "paused", pause: { kind: "out of credit" }, message: "Credit balance is too low" },
+      commits: 0,
+      treeClean: true,
+    });
+    const report = reportBuild(paused, { handedOff: false, hostStepFailed: false, runUrl, spec: 7 });
+
+    expect(report).toMatchObject({ block: false, close: false, outcome: { kind: "paused" }, pause: { kind: "out of credit" } });
+    expect(report.comment).not.toContain("restart-as");
+    expect(report.specPause).toEqual({
+      label: "factory:paused",
+      comment: expect.stringContaining("<!-- factory:restart-as v1 agent:implement-spec -->"),
+    });
   });
 
   it("when the hand-off to review failed, keeps the ticket open and blocked", () => {

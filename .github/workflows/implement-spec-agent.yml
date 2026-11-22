@@ -169,6 +169,7 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ steps.report-token.outputs.token }}
+          FACTORY_APP_SLUG: ${{ steps.report-token.outputs.app-slug }}
           JOB_STATUS: ${{ job.status }}
           WRITTEN: ${{ steps.queue.outputs.written }}
         run: factory/.sandcastle/node_modules/.bin/tsx factory/.sandcastle/agent-workflows/implement-spec/report.ts
@@ -377,6 +378,7 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ steps.report-token.outputs.token }}
+          FACTORY_APP_SLUG: ${{ steps.report-token.outputs.app-slug }}
           JOB_STATUS: ${{ job.status }}
           PR_URL: ${{ steps.pr.outputs.url }}
           HANDED_OFF: ${{ steps.pr.outputs.handed-off }}

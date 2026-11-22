@@ -9,6 +9,7 @@
 //   FACTORY_APP_SLUG  the App's slug, from the token step
 // A run that fails after a claim marks the claimed issue blocked before it exits.
 import { loadBudget } from "../shared/budget";
+import { readBudgetPauseTicket } from "../shared/budget-pause-github";
 import { required } from "../shared/common";
 import { decideGate, findLabeller, type IssueEvent, type Labeller, type WorkflowRun } from "../shared/gate";
 import { ghApi, ghPages, writeStepSummary } from "../shared/gh";
@@ -50,8 +51,7 @@ const runs: WorkflowRun[] = ghPages<{ workflow_runs: WorkflowRun[] }>(
   `repos/${factoryRepo}/actions/runs?per_page=100&created=>=${runListSince(now)}`
 ).flatMap((page) => page.workflow_runs);
 
-// The budget-pause ticket arrives with the budget pause; until then no pause is open.
-const budgetPause = { open: false } as const;
+const budgetPause = readBudgetPauseTicket(factoryRepo, factoryAppLogin);
 
 type ApiIssue = {
   number: number;

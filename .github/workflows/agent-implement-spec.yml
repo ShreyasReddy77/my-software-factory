@@ -55,7 +55,10 @@ name: Agent — Implement A Spec
 #          ceiling hit pushes a draft and parks the ticket; a refusal, crash
 #          or empty run pushes nothing and parks it with `agent:blocked`. A
 #          parked ticket is skipped until a person takes `agent:blocked` off.
-#      Its job timeout is the line's `agent_minutes` + 15.
+#      A Claude usage limit or empty credit in either mode pushes nothing,
+#      is not a try, frees any claimed ticket, labels the spec
+#      `factory:paused` and records the budget-pause ticket; the requeue run
+#      restarts the spec. Its job timeout is the line's `agent_minutes` + 15.
 #
 #   Locks come from run names, never from Actions concurrency groups: the
 #   gate run is named `[ticket owner/repo#<spec>] implement-spec (no agent)`

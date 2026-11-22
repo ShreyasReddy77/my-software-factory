@@ -1,6 +1,7 @@
 import type { AgentEnd, AgentRunEnd } from "../implement/run-end";
+import { pauseItemText, type Pause } from "../shared/budget-pause";
 import { labels, specQueueLabel, triggerLabel } from "../shared/labels";
-import { statusMarker } from "../shared/marker";
+import { statusMarker, writeMarker } from "../shared/marker";
 import type { Outcome } from "../shared/run-summary";
 
 export type SpecRunReport = {
@@ -8,6 +9,8 @@ export type SpecRunReport = {
   readonly outcome: Outcome;
   readonly nextLabel?: string;
   readonly comment: string;
+  // Set when Claude's limit paused the run: the budget-pause ticket records it.
+  readonly pause?: Pause;
 };
 
 // A run retries only when a person re-adds the label, so its first failed
@@ -15,6 +18,9 @@ export type SpecRunReport = {
 const failedTry: Outcome = { kind: "failed try", try: 1, of: 1 };
 
 const trigger = triggerLabel("implement-spec");
+
+// A paused split or build restarts from the spec, never from the ticket.
+const restartText = `The requeue run restarts the spec as \`${trigger}\` once the budget pause ends. ${writeMarker(trigger)} ${statusMarker}`;
 
 export type SplitFacts = {
   readonly agentEnd: AgentEnd;
@@ -33,6 +39,14 @@ export const reportSplit = ({ agentEnd, written, spec, hostStepFailed, runUrl }:
     nextLabel: labels.blocked,
     comment: `Split **${outcome.kind === "ceiling hit" ? "hit its ceiling" : "failed"}** — ${logs}.\n\n${why}\n\nRe-add \`${trigger}\` to retry. ${statusMarker}`,
   });
+  if (agentEnd.kind === "paused")
+    return {
+      block: false,
+      outcome: { kind: "paused" },
+      nextLabel: labels.paused,
+      pause: agentEnd.pause,
+      comment: `${pauseItemText(agentEnd.pause)} — ${logs}. Nothing was written, and this is not a try. ${restartText}`,
+    };
   if (agentEnd.kind !== "finished")
     return blocked(agentEnd.kind === "ceiling hit" ? { kind: "ceiling hit" } : failedTry, agentEnd.message);
   if (hostStepFailed || written === undefined || written === 0)
@@ -58,6 +72,8 @@ export type BuildReport = SpecRunReport & {
   // Closing the ticket is what moves the queue on, until the PR loop counts
   // a ticket done only when its PR merges.
   readonly close: boolean;
+  // On a pause the spec, not the ticket, waits to be restarted.
+  readonly specPause?: { readonly label: string; readonly comment: string };
 };
 
 const buildText = (end: AgentRunEnd, { prUrl, handedOff, hostStepFailed, runUrl, spec }: BuildFacts): string => {
@@ -73,6 +89,17 @@ const buildText = (end: AgentRunEnd, { prUrl, handedOff, hostStepFailed, runUrl,
 };
 
 export const reportBuild = (end: AgentRunEnd, facts: BuildFacts): BuildReport => {
+  if (end.pause !== undefined && !facts.hostStepFailed) {
+    const text = `${pauseItemText(end.pause)} — [logs](${facts.runUrl}).`;
+    return {
+      block: false,
+      close: false,
+      outcome: { kind: "paused" },
+      pause: end.pause,
+      comment: `${text} Nothing was pushed, and this is not a try. The next build of spec #${facts.spec} picks this ticket up again. ${statusMarker}`,
+      specPause: { label: labels.paused, comment: `${text} While building a queue ticket. ${restartText}` },
+    };
+  }
   const block = facts.hostStepFailed || !end.handOffToReview;
   return {
     block,
