@@ -1,5 +1,6 @@
 // The budget pause: what a Claude limit looks like in a failed agent run's
-// error, and the words the factory uses for it. Pure: the caller passes the clock.
+// error, the words the factory reports it in, and the one budget-pause ticket.
+// Pure: the caller passes the clock and the factory's open issues.
 
 export type Pause =
   | { readonly kind: "usage limit"; readonly resetsAt?: string }
@@ -7,8 +8,7 @@ export type Pause =
 
 export type PauseClassification = Pause | { readonly kind: "not a pause" };
 
-const minute = 60_000;
-const day = 24 * 60 * minute;
+const day = 24 * 60 * 60_000;
 
 const usageLimit = /You've hit your [\w-]+ limit(?:\s*·\s*resets\s+([^\n.]+))?/i;
 // Out of API credit or over a spend limit: Claude fails at once and names no
@@ -40,4 +40,64 @@ export const classifyPause = (errorText: string, now: Date): PauseClassification
   }
   if (outOfCredit.test(errorText)) return { kind: "out of credit" };
   return { kind: "not a pause" };
+};
+
+const utcMinute = (iso: string): string => `${iso.slice(0, 16).replace("T", " ")} UTC`;
+
+const resetOf = (pause: Pause): string | undefined => (pause.kind === "usage limit" ? pause.resetsAt : undefined);
+
+export const pauseTitle = (pause: Pause): string => {
+  if (pause.kind === "out of credit") return "Out of Claude credit";
+  const resetsAt = resetOf(pause);
+  return resetsAt === undefined ? "Claude usage paused, reset time unknown" : `Claude usage paused until ${utcMinute(resetsAt)}`;
+};
+
+export const pauseItemText = (pause: Pause): string => {
+  if (pause.kind === "out of credit") return "Paused: out of Claude credit, no reset time";
+  const resetsAt = resetOf(pause);
+  return resetsAt === undefined ? "Paused: usage limit, reset time unknown" : `Paused: usage limit, resets at ${utcMinute(resetsAt)}`;
+};
+
+// The ticket's body carries its reset in a hidden marker, so reading it back
+// never parses the title. A release that changes the form keeps reading v1.
+const pauseMarker = (pause: Pause): string => `<!-- factory:budget-pause v1 until=${resetOf(pause) ?? "none"} -->`;
+const pauseMarkerForm = /<!-- factory:budget-pause v1 until=(\S+) -->/;
+
+export const pauseTicketBody = (pause: Pause): string =>
+  [
+    `A factory run hit a Claude limit. ${pauseItemText(pause)}.`,
+    "",
+    "While this ticket is open, every gate run pauses its item, labelled `factory:paused`, without calling Claude. A pause is not a try.",
+    "",
+    resetOf(pause) === undefined
+      ? "Close this ticket once Claude can be used again (for credit, after topping up); the requeue run then restarts paused work."
+      : "The requeue run closes this ticket once the reset has passed, then restarts paused work.",
+    "",
+    pauseMarker(pause),
+  ].join("\n");
+
+export type FactoryIssue = {
+  readonly number: number;
+  readonly title: string;
+  readonly body: string | null;
+  readonly user: { readonly login: string } | null;
+  readonly pull_request?: unknown;
+};
+
+export type BudgetPauseState =
+  | { readonly open: false }
+  | { readonly open: true; readonly ticket: number; readonly until?: Date };
+
+// Only the factory's App opens the ticket, so a look-alike from anyone else
+// can't pause the factory.
+export const readBudgetPause = (openIssues: readonly FactoryIssue[], factoryAppLogin: string): BudgetPauseState => {
+  const ticket = openIssues
+    .filter((issue) => issue.pull_request === undefined && issue.user?.login === factoryAppLogin)
+    .flatMap((issue) => {
+      const until = pauseMarkerForm.exec(issue.body ?? "")?.[1];
+      return until === undefined ? [] : [{ number: issue.number, until }];
+    })
+    .sort((a, b) => a.number - b.number)[0];
+  if (ticket === undefined) return { open: false };
+  return { open: true, ticket: ticket.number, ...(ticket.until === "none" ? {} : { until: new Date(ticket.until) }) };
 };
