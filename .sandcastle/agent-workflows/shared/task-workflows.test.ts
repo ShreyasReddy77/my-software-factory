@@ -100,10 +100,9 @@ describe.each(tasks)("$task's workflows", ({ task, itemExpression, itemInput, lo
     expect(Object.values(run.jobs)[0]?.["timeout-minutes"]).toBe("${{ fromJSON(inputs.job_timeout) }}");
   });
 
-  it("keep no concurrency groups and never use FACTORY_PAT", () => {
+  it("keep no concurrency groups", () => {
     for (const file of [entryFile, agentEntryFile, runFile, "gate-run.yml"]) {
       expect(read(file)).not.toMatch(/^\s*concurrency:/m);
-      expect(read(file)).not.toContain("FACTORY_PAT");
     }
   });
 

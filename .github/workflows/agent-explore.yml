@@ -73,8 +73,8 @@ name: Agent — Explore The Tickets
 #   secrets.CLAUDE_CODE_OAUTH_TOKEN — the Claude token. Only the relay's host
 #     step reads it.
 #   budget.yml on main; a `stable` tag (both refs are named in every entry
-#     file); the labels, created once, `needs-a-human` among them: see
-#     docs/setup-checklist.md.
+#     file); the labels, created once, `needs-a-human` among them: see the
+#     README.
 
 on:
   issues:

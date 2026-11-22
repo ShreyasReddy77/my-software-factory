@@ -21,7 +21,7 @@ export const repoVariables = (repo: string): { owner: string; name: string } => 
 };
 
 // The node ids of labels, by name, in one call. A label the repo lacks fails
-// loudly: docs/setup-checklist.md creates them once.
+// loudly: the README's one-time setup creates them once.
 export const readLabelIds = <Name extends string>(repo: string, names: readonly Name[]): Record<Name, string> => {
   const fields = names.map((_, n) => `l${n}: label(name: $n${n}) { id }`).join(" ");
   const declarations = names.map((_, n) => `$n${n}: String!`).join(", ");
@@ -32,7 +32,7 @@ export const readLabelIds = <Name extends string>(repo: string, names: readonly 
   return Object.fromEntries(
     names.map((name, n) => {
       const label = data.repository[`l${n}`];
-      if (!label) throw new Error(`${repo} has no label ${name}; create it as docs/setup-checklist.md says`);
+      if (!label) throw new Error(`${repo} has no label ${name}; create it as the README's one-time setup says`);
       return [name, label.id];
     })
   ) as Record<Name, string>;

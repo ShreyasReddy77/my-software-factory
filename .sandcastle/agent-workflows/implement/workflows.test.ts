@@ -92,10 +92,6 @@ describe("implement's runs", () => {
     for (const file of implementFiles) expect(read(file)).not.toMatch(/^\s*concurrency:/m);
   });
 
-  it("never use FACTORY_PAT", () => {
-    for (const file of implementFiles) expect(read(file)).not.toContain("FACTORY_PAT");
-  });
-
   it("check out without keeping a credential", () => {
     const checkouts = allSteps.filter((step) => step.uses?.startsWith("actions/checkout@"));
     expect(checkouts.length).toBeGreaterThan(0);

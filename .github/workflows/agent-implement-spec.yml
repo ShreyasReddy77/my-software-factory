@@ -82,7 +82,7 @@ name: Agent — Implement A Spec
 #   budget.yml on main — the models, credential, caps and ceilings.
 #   A `stable` tag — every entry file names its reusable workflow at @stable
 #     too, so the tag must exist even while this repository runs @main.
-#   The labels, created once: see docs/setup-checklist.md. The split creates
+#   The labels, created once: see the README. The split creates
 #     each spec's `spec:<n>` label itself.
 #
 # A CAUTION THAT COMES WITH IT

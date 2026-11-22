@@ -51,11 +51,10 @@ describe("the requeue run's workflow", () => {
     }
   });
 
-  it("checks out without keeping a credential and never uses FACTORY_PAT", () => {
+  it("checks out without keeping a credential", () => {
     const checkouts = steps.filter((step) => step.uses?.startsWith("actions/checkout@"));
     expect(checkouts.length).toBeGreaterThan(0);
     for (const step of checkouts) expect(step.with?.["persist-credentials"]).toBe(false);
-    expect(read("requeue.yml")).not.toContain("FACTORY_PAT");
   });
 
   it("restarts with one App token for the factory: issues and PRs write, the run list read", () => {

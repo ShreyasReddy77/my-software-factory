@@ -76,7 +76,7 @@ Each rule holds for every task unless the task's section says otherwise.
   | Claude token | A secret in the factory and one in the companion, read only by the relay's host step | Factory-only (revoking it never touches the user's own Claude use), spending-capped where the plan allows, rotated every few months, revoked on odd usage. |
   | Shim token | A secret in each owned repo | Fine-grained, on the factory (or the companion) only, **Actions: write** only: it can start factory workflows and nothing else. |
 
-  `FACTORY_PAT` is retired.
+  v0's personal access token is retired: nothing in the factory holds one. (Foundation)
 - **The App's full permission set** (repository permissions; each token asks only for what its host step needs) (Foundation session):
 
   | Permission | For |
@@ -190,7 +190,7 @@ Upstream runs add the policy check first ([Upstream flow]), and `agent:upstream`
 
 - **Code from `stable`, settings from `main`.** Every factory workflow is a thin entry file, live from `main`, holding only the trigger, permissions and a call. Its two jobs pick, by job-level `if:`, the real reusable workflow at `@stable` (most target repos) or at `@main` (test repos, and the factory itself). Scripts, prompts and workflow logic come from that ref. `budget.yml` and everything under `targets/` are always read from `main`. *Why:* a bad factory change hurts only the test repos, and turning a repo off or merging a re-map takes effect at once. ([Factory upgrades], [Self-improvement])
 - **A run pins one factory commit at its start** and uses it for every job and host step. Waiting items restart as new runs on whatever `stable` is then. **Each release reads everything the previous release wrote** (labels, marker comments, lock and try counts, file shapes); a format change reads both forms until the old one is gone. ([Factory upgrades])
-- **Releasing** is a dated GitHub release (e.g. `stable-2026-11-20`) listing what changed, then moving the `stable` tag to it. Rollback moves `stable` back. A release that changes a state format says "not rollback-safe: <what changed>" in its notes; rolling back past it, the user re-labels the affected items by hand. The user moves `stable` by hand. ([Factory upgrades], [Self-improvement])
+- **Releasing** is a dated GitHub release (e.g. `stable-2026-11-20`) listing what changed, then moving the `stable` tag to it. Rollback moves `stable` back. A release that changes a state format says "not rollback-safe: <what changed>" in its notes; rolling back past it, the user re-labels the affected items by hand. The user moves `stable` by hand, and checks each move: a workflow run at `stable` before and after the move must show the new commit ran (the README's release procedure). The `stable` tag must exist before any run, since every entry file names both refs; the first release is cut at setup. ([Factory upgrades], [Self-improvement], Foundation session)
 - **The factory proposes changes to itself; the user always merges them.** Factory changes never climb the trust ladder. The factory repo is one more owned target with its own ICM map and every change kind fixed at step 1. ([Self-improvement])
 
 ### Upstream
@@ -470,7 +470,7 @@ Built in order, each its own `/to-spec` → `/to-tickets` → `/implement-spec` 
 ### 1. Foundation
 
 **Delivers:**
-- The GitHub App with [its full permission set](#credentials-and-the-sandbox) and per-host-step tokens; `FACTORY_PAT` retired.
+- The GitHub App with [its full permission set](#credentials-and-the-sandbox) and per-host-step tokens; v0's personal access token retired.
 - Agents under `bwrap()` on pinned `ubuntu-24.04`, with `persist-credentials: false`, no secret on the launching host step, and the credential relay.
 - The push step's scans (gitleaks, the Claude token found by its hash, workflow changes).
 - `budget.yml` in [its settled shape](#budget): credential, models, caps, priority, per-task ceilings with the two time limits. The budget-pause ticket, `factory:queued`/`factory:paused`, the pre-run budget gates, and the requeue run (restarting queued and paused items, closing timed pauses).
@@ -479,7 +479,7 @@ Built in order, each its own `/to-spec` → `/to-tickets` → `/implement-spec` 
 - Thin entry files plus reusable workflows, the `@stable`/`@main` split, run-start pinning, and dated `stable` releases.
 - Run summaries on every run, and the README's saved search links and link to the latest requeue run.
 
-**Revises in v0:** all four v0 tasks (explore, implement, implement-spec, review) move onto this base. `FACTORY_PAT` gives way to App tokens; the unsandboxed agent moves into `bwrap()`; the hard-coded model pins (`claude-opus-4-6` in `.sandcastle/main.ts`, `interactive.ts`, `test.ts`; `claude-opus-5-5` in `shared/common.ts`) give way to `budget.yml`, read only by `shared/common.ts`; each workflow splits into an entry file and a reusable workflow. The Sandcastle starter leftovers (`.sandcastle/main.ts`, `test.ts`, `interactive.ts`, `prompt.md`), which no workflow uses, are deleted. Implement-spec loses its 15-minute clock and its self-start chain now, because a run with no label can't be queued or restarted: until the PR loop, each `agent:implement-spec` label splits the spec when it has no queue yet, and otherwise builds the queue's next ready ticket. The split spends implement-spec's budget line under the spec's lock; the build spends implement's under the ticket's lock. The queue keeps v0's form (`spec:<n>` labels, `Position:`/`Depends on:` lines, a ticket done when closed at PR open) until the PR loop settles G8; v0's `agent:queued` label goes. (Foundation session)
+**Revises in v0:** all four v0 tasks (explore, implement, implement-spec, review) move onto this base. v0's personal access token gives way to App tokens; the unsandboxed agent moves into `bwrap()`; the hard-coded model pins (`claude-opus-4-6` in `.sandcastle/main.ts`, `interactive.ts`, `test.ts`; `claude-opus-5-5` in `shared/common.ts`) give way to `budget.yml`, read only by `shared/common.ts`; each workflow splits into an entry file and a reusable workflow. The Sandcastle starter leftovers (`.sandcastle/main.ts`, `test.ts`, `interactive.ts`, `prompt.md`), which no workflow uses, are deleted. Implement-spec loses its 15-minute clock and its self-start chain now, because a run with no label can't be queued or restarted: until the PR loop, each `agent:implement-spec` label splits the spec when it has no queue yet, and otherwise builds the queue's next ready ticket. The split spends implement-spec's budget line under the spec's lock; the build spends implement's under the ticket's lock. The queue keeps v0's form (`spec:<n>` labels, `Position:`/`Depends on:` lines, a ticket done when closed at PR open) until the PR loop settles G8; v0's `agent:queued` label goes. (Foundation session)
 
 **Still works when it lands:** v0's four tasks run on the factory repo itself, label-triggered as before, with drafts and a human merging every PR, now sandboxed, budgeted and released through `stable`.
 

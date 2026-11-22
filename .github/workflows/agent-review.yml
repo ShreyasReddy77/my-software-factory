@@ -73,7 +73,7 @@ name: Agent — Review A Pull Request
 #   secrets.CLAUDE_CODE_OAUTH_TOKEN — the Claude token. Only the relay's host
 #     step reads it.
 #   budget.yml on main; a `stable` tag (both refs are named in every entry
-#     file); the labels, created once: see docs/setup-checklist.md.
+#     file); the labels, created once: see the README.
 #
 # A CAUTION THAT COMES WITH IT
 #   `pull_request` (not `pull_request_target`), so a fork's PR never runs with
