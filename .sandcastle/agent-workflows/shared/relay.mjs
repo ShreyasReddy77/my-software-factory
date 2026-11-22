@@ -1,5 +1,8 @@
+import { createHash } from "node:crypto";
+import * as fs from "node:fs";
 import * as http from "node:http";
 import * as https from "node:https";
+import { pathToFileURL } from "node:url";
 
 const anthropic = { protocol: "https:", host: "api.anthropic.com", port: 443 };
 const oauthBeta = "oauth-2025-04-20";
@@ -12,6 +15,12 @@ const credentialHeaders = (credential, token, incoming) => {
   return { authorization: `Bearer ${token}`, "anthropic-beta": [...betas].join(",") };
 };
 
+/** @type {readonly ["subscription", "api-key"]} */
+export const credentials = ["subscription", "api-key"];
+
+/** The form in which later host steps (the push guard) know the Claude token. */
+export const claudeTokenHash = (token) => createHash("sha256").update(token).digest("hex");
+
 const relayedPath = "/v1/messages";
 
 const isRelayed = (method, url) => method === "POST" && url.split("?")[0] === relayedPath;
@@ -22,7 +31,7 @@ const refuse = (res, status, message) => {
 };
 
 /**
- * @param {{ token: string, credential: "subscription" | "api-key",
+ * @param {{ token: string, credential: (typeof credentials)[number],
  *   upstream?: { protocol: "http:" | "https:", host: string, port: number } }} options
  */
 export const createRelay = ({ token, credential, upstream = anthropic }) =>
@@ -56,3 +65,30 @@ export const createRelay = ({ token, credential, upstream = anthropic }) =>
     });
     req.pipe(forwarded);
   });
+
+const readStdin = async () => {
+  let data = "";
+  for await (const chunk of process.stdin) data += chunk;
+  return data.trim();
+};
+
+const serve = async ([credential, port = "8787"]) => {
+  if (!credentials.includes(credential)) {
+    console.error(`usage: relay.mjs <${credentials.join("|")}> [port]`);
+    process.exit(2);
+  }
+  const token = await readStdin();
+  if (!token) {
+    console.error("relay: no token on stdin");
+    process.exit(2);
+  }
+  if (process.env.GITHUB_OUTPUT)
+    fs.appendFileSync(process.env.GITHUB_OUTPUT, `claude-token-sha256=${claudeTokenHash(token)}
+`);
+  const relay = createRelay({ token, credential });
+  relay.listen(Number(port), "127.0.0.1", () =>
+    console.log(`relay ready on 127.0.0.1:${relay.address().port} credential=${credential}`)
+  );
+};
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) await serve(process.argv.slice(2));
