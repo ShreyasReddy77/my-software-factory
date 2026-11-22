@@ -244,6 +244,7 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ steps.report-token.outputs.token }}
+          FACTORY_APP_SLUG: ${{ steps.report-token.outputs.app-slug }}
           JOB_STATUS: ${{ job.status }}
           PUSH_REJECTED: ${{ steps.push.outputs.rejected }}
           FALLBACK_PR: ${{ steps.fallback.outputs.number }}

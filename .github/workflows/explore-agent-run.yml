@@ -226,6 +226,7 @@ jobs:
       - name: Finish the batch and write the run summary
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
+          FACTORY_APP_SLUG: ${{ steps.token.outputs.app-slug }}
           AGENT_END: ${{ needs.explore.outputs.agent-end }}
           JOB_RESULTS: ${{ format('["{0}","{1}"]', needs.explore.result, needs.apply.result) }}
           EXPLORE_STARTED_AT: ${{ needs.explore.outputs.started-at }}

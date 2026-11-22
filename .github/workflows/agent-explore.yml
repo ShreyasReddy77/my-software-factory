@@ -49,7 +49,10 @@ name: Agent — Explore The Tickets
 #        finish   however the run ended: marks every issue still
 #                 `agent:in-progress` `agent:blocked` with a comment if any job
 #                 failed (a refused plan, a crash, a ceiling), takes
-#                 `agent:in-progress` off, and writes the run summary.
+#                 `agent:in-progress` off, and writes the run summary. If the
+#                 agent hit a Claude limit, the batch goes `factory:paused`
+#                 instead (not a try) and the budget-pause ticket is opened or
+#                 commented on; the requeue run restarts it.
 #      Its job timeout is `agent_minutes` + 15; if that fires, something hung.
 #
 #   Locks come from run names, never from Actions concurrency groups: the gate

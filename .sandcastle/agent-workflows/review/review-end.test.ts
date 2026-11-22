@@ -49,6 +49,13 @@ describe("whether the review's fixes are pushed", () => {
     expect(decideReviewEnd({ agentEnd: finished, commits: 1 }).push).toBe(false);
   });
 
+  it("pushes nothing when Claude's usage paused, and is not a try", () => {
+    const pause = { kind: "usage limit", resetsAt: "2026-11-22T15:45:00.000Z" } as const;
+    const end = decideReviewEnd({ agentEnd: { kind: "paused", pause, message: "You've hit your limit" }, commits: 1, guard: clean });
+
+    expect(end).toEqual({ push: false, outcome: { kind: "paused" }, why: "You've hit your limit", pause });
+  });
+
   it("pushes nothing after a crash", () => {
     const end = decideReviewEnd({ agentEnd: { kind: "crashed", message: "boom" }, commits: 3, guard: clean });
 
@@ -102,6 +109,16 @@ describe("the review's report on its PR", () => {
 
     expect(report.comment).toContain("saw the diff, the standards and the ticket, and nothing else.");
     expect(report.comment).not.toContain("factory:status");
+  });
+
+  it("on a pause, labels the PR factory:paused with a marker to restart it, keeps it a draft and blocks nothing", () => {
+    const pause = { kind: "usage limit", resetsAt: "2026-11-22T15:45:00.000Z" } as const;
+    const report = reportReview({ push: false, outcome: { kind: "paused" }, why: "limit", pause }, { ...facts, verdict: "" });
+
+    expect(report).toMatchObject({ ready: false, block: false, nextLabel: "factory:paused", outcome: { kind: "paused" } });
+    expect(report.comment).toContain("Paused: usage limit, resets at 2026-11-22 15:45 UTC");
+    expect(report.comment).toContain("<!-- factory:restart-as v1 agent:review -->");
+    expect(report.comment).toContain("<!-- factory:status -->");
   });
 
   it("records the next label it set for the run summary", () => {

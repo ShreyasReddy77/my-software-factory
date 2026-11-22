@@ -1,5 +1,7 @@
 import type { AgentEnd } from "../implement/run-end";
+import { pauseItemText, type Pause } from "../shared/budget-pause";
 import { labels, triggerLabel } from "../shared/labels";
+import { statusMarker, writeMarker } from "../shared/marker";
 import type { Outcome } from "../shared/run-summary";
 
 // The one thing read from the PR itself: which ticket it closes.
@@ -18,12 +20,17 @@ export type ReviewRunEnd = {
   readonly push: boolean;
   readonly outcome: Outcome;
   readonly why: string;
+  readonly pause?: Pause;
 };
 
 // Review retries only when a person re-adds its label.
 const failedTry: Outcome = { kind: "failed try", try: 1, of: 1 };
 
+// A pause fails fast and pushes nothing: the restart reviews afresh, and a
+// pause is not a try.
 export const decideReviewEnd = ({ agentEnd, commits, guard }: ReviewRunFacts): ReviewRunEnd => {
+  if (agentEnd.kind === "paused")
+    return { push: false, outcome: { kind: "paused" }, why: agentEnd.message, pause: agentEnd.pause };
   if (agentEnd.kind === "crashed") return { push: false, outcome: failedTry, why: `The agent crashed: ${agentEnd.message}` };
   const outcome: Outcome = agentEnd.kind === "ceiling hit" ? { kind: "ceiling hit" } : { kind: "done" };
   const why = agentEnd.kind === "ceiling hit" ? agentEnd.message : "";
@@ -77,7 +84,19 @@ const commentText = (end: ReviewRunEnd, facts: ReviewReportFacts): string => {
   return `${parts.join("\n\n")}\n`;
 };
 
+const pausedReport = (pause: Pause, runUrl: string): ReviewReport => ({
+  ready: false,
+  block: false,
+  outcome: { kind: "paused" },
+  nextLabel: labels.paused,
+  comment:
+    `${pauseItemText(pause)} — [logs](${runUrl}). Nothing was pushed, and this is not a try. ` +
+    `The requeue run restarts it as \`${triggerLabel("review")}\` once the budget pause ends. ` +
+    `${writeMarker(triggerLabel("review"))} ${statusMarker}`,
+});
+
 export const reportReview = (end: ReviewRunEnd, facts: ReviewReportFacts): ReviewReport => {
+  if (end.pause !== undefined && !facts.hostStepFailed) return pausedReport(end.pause, facts.runUrl);
   const done = end.outcome.kind === "done" && !facts.hostStepFailed;
   const block = !done || facts.pushRejected;
   return {

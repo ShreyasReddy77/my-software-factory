@@ -5,8 +5,12 @@
 //   AGENT_END    agent-end.json from the explore job, as text, or empty
 //   JOB_RESULTS  the explore and apply jobs' results, as a JSON array
 //   RUN_URL      this run's page; STARTED_AT the run's start, in epoch seconds
+//   FACTORY_REPO where the budget-pause ticket lives; FACTORY_APP_SLUG the App's slug
+// A Claude pause labels the batch factory:paused instead and opens or comments
+// on the budget-pause ticket, so GH_TOKEN needs Issues write on FACTORY_REPO too.
 import type { AgentEnd } from "../implement/run-end";
 import { loadBudget } from "../shared/budget";
+import { recordBudgetPause } from "../shared/budget-pause-github";
 import { required } from "../shared/common";
 import { writeStepSummary } from "../shared/gh";
 import { readIssues, readLabelIds, writeIssues } from "../shared/gh-graphql";
@@ -32,18 +36,31 @@ const finish = planExploreFinish({
 });
 
 if (inProgress.length > 0) {
-  const ids = readLabelIds(repo, [labels.inProgress, labels.blocked]);
+  const ids = readLabelIds(repo, [labels.inProgress, labels.blocked, labels.paused]);
+  const nextLabel = (number: number): string | undefined => {
+    if (finish.block.includes(number)) return ids[labels.blocked];
+    if (finish.pause.includes(number)) return ids[labels.paused];
+    return undefined;
+  };
   writeIssues(
     inProgress.map((issue) => {
-      const block = finish.block.includes(issue.number);
+      const next = nextLabel(issue.number);
       return {
         issueId: issue.id,
         removeLabelIds: [ids[labels.inProgress]],
-        ...(block ? { comment: finish.comment, addLabelIds: [ids[labels.blocked]] } : {}),
+        ...(next === undefined ? {} : { comment: finish.comment, addLabelIds: [next] }),
       };
     })
   );
 }
+
+const firstPaused = finish.pause[0];
+if (finish.pauseReason !== undefined && firstPaused !== undefined)
+  recordBudgetPause(
+    finish.pauseReason,
+    { repo, number: firstPaused, runUrl: required("RUN_URL") },
+    { factoryRepo: required("FACTORY_REPO"), factoryAppLogin: `${required("FACTORY_APP_SLUG")}[bot]` }
+  );
 
 writeStepSummary(
   renderRunSummary({
@@ -55,5 +72,6 @@ writeStepSummary(
     seconds: Math.max(0, Math.round(Date.now() / 1000) - Number(required("STARTED_AT"))),
     model: loadBudget().tasks.explore.model,
     ...(finish.block.length > 0 ? { nextLabel: labels.blocked } : {}),
+    ...(finish.pause.length > 0 ? { nextLabel: labels.paused } : {}),
   })
 );

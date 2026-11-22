@@ -8,7 +8,7 @@ describe("the end of an explore run", () => {
   it("is done when the agent finished and the plan was applied, blocking nothing", () => {
     const finish = planExploreFinish({ agentEnd: finished, jobResults: ["success", "success"], stillInProgress: [], runUrl });
 
-    expect(finish).toMatchObject({ outcome: { kind: "done" }, block: [] });
+    expect(finish).toMatchObject({ outcome: { kind: "done" }, block: [], pause: [] });
   });
 
   it("blocks only the batch issues apply did not get to, when any job failed", () => {
@@ -32,6 +32,20 @@ describe("the end of an explore run", () => {
     expect(finish.outcome).toEqual({ kind: "ceiling hit" });
     expect(finish.block).toEqual([4]);
     expect(finish.comment).toContain("hit its ceiling");
+  });
+
+  it("on a Claude pause, pauses the batch issues with a marker each, blocking none and counting no try", () => {
+    const pause = { kind: "out of credit" } as const;
+    const finish = planExploreFinish({
+      agentEnd: { kind: "paused", pause, message: "Credit balance is too low" },
+      jobResults: ["success", "failure"],
+      stillInProgress: [4, 9],
+      runUrl,
+    });
+
+    expect(finish).toMatchObject({ outcome: { kind: "paused" }, block: [], pause: [4, 9], pauseReason: pause });
+    expect(finish.comment).toContain("Paused: out of Claude credit, no reset time");
+    expect(finish.comment).toContain("<!-- factory:restart-as v1 agent:explore -->");
   });
 
   it("counts a run whose agent job never recorded an end as a failed try", () => {
