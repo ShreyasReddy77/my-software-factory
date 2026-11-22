@@ -1,12 +1,14 @@
 // Decides, after the agent and the push guard, whether the run pushes.
 //   REPO_DIR    the target repo's checkout; PUSH_BASE the commit before the agent ran
 //   OUTPUT_DIR  holds agent-end.json and push-guard.json; gets run-end.json
-// It writes `push` and `handoff` (true or false) to $GITHUB_OUTPUT.
+// It writes `push` (true or false) and `handoff-label` (the label that hands the
+// PR to review, or empty) to $GITHUB_OUTPUT.
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { outputDir, required, writeJson } from "../shared/common";
 import { writeOutputs } from "../shared/gh";
+import { triggerLabel } from "../shared/labels";
 import { refusalText, type PushVerdict } from "../shared/push-guard";
 import { decideAgentRunEnd, type AgentEnd } from "./run-end";
 
@@ -37,4 +39,4 @@ const end = decideAgentRunEnd({
 
 console.log(end.why || "The agent's work is ready to push.");
 writeJson("run-end.json", end);
-writeOutputs({ push: String(end.push), handoff: String(end.handOffToReview) });
+writeOutputs({ push: String(end.push), "handoff-label": end.handOffToReview ? triggerLabel("review") : "" });

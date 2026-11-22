@@ -7,13 +7,14 @@
 //   FACTORY_REF       stable or main; FACTORY_SHA the commit this run pinned
 //   AGENT_WORKFLOW    the agent run's workflow file, started by workflow_dispatch
 //   FACTORY_APP_SLUG  the App's slug, from the token step
-// It writes `claimed` (true once agent:in-progress is on) to $GITHUB_OUTPUT.
+// A run that fails after its claim marks the ticket blocked before it exits.
 import { loadBudget } from "./budget";
 import { required } from "./common";
 import { decideGate, findLabeller, type IssueEvent, type Labeller, type WorkflowRun } from "./gate";
 import { jobTimeoutMinutes, planGateRun, type GateAction } from "./gate-run-plan";
-import { ghApi, ghPages, writeOutputs, writeStepSummary } from "./gh";
+import { ghApi, ghPages, writeStepSummary } from "./gh";
 import { labels, triggerLabel } from "./labels";
+import { statusMarker } from "./marker";
 import { renderRunSummary } from "./run-summary";
 import { isAgentTask, lockScopes } from "./tasks";
 
@@ -91,6 +92,8 @@ const removeLabel = (label: string): void => {
   }
 };
 
+let claimed = false;
+
 const carryOut = (action: GateAction): void => {
   switch (action.kind) {
     case "comment":
@@ -98,7 +101,7 @@ const carryOut = (action: GateAction): void => {
       return;
     case "add label":
       ghApi(["-X", "POST", `${issuePath}/labels`, "-f", `labels[]=${action.label}`]);
-      if (action.label === labels.inProgress) writeOutputs({ claimed: "true" });
+      claimed ||= action.label === labels.inProgress;
       return;
     case "remove label":
       removeLabel(action.label);
@@ -113,6 +116,23 @@ const carryOut = (action: GateAction): void => {
   }
 };
 
-for (const action of plan.actions) carryOut(action);
+// A claim with no agent run behind it would hold agent:in-progress forever.
+const releaseClaim = (error: unknown): void => {
+  const reason = error instanceof Error ? error.message : String(error);
+  ghApi(["-X", "POST", `${issuePath}/labels`, "-f", `labels[]=${labels.blocked}`]);
+  removeLabel(labels.inProgress);
+  ghApi([
+    "-X", "POST", `${issuePath}/comments`, "-f",
+    `body=The gate run claimed this ticket but could not start its agent run: ${reason}. ` +
+      `Re-add \`${triggerLabel(task)}\` to retry. ${statusMarker}`,
+  ]);
+};
+
+try {
+  for (const action of plan.actions) carryOut(action);
+} catch (error) {
+  if (claimed) releaseClaim(error);
+  throw error;
+}
 
 writeStepSummary(renderRunSummary({ ...plan.record, seconds: Math.round((Date.now() - startedAt) / 1000) }));

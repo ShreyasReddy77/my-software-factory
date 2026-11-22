@@ -1,0 +1,241 @@
+name: Implement — agent run
+
+# Started only by implement's gate run, by workflow_dispatch at the factory
+# ref the task runs. agent-implement.yml's header is the operator's manual.
+
+on:
+  workflow_dispatch:
+    inputs:
+      factory_sha:
+        description: The factory commit the gate run pinned
+        type: string
+        required: true
+      issue:
+        description: The ticket's number
+        type: string
+        required: true
+      job_timeout:
+        description: implement's agent_minutes plus 15
+        type: string
+        required: true
+
+run-name: "[ticket ${{ github.repository }}#${{ inputs.issue }}] implement"
+
+permissions:
+  contents: read
+
+env:
+  FACTORY_REPO: ShreyasReddy77/my-software-factory
+
+jobs:
+  agent:
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ fromJSON(inputs.job_timeout) }}
+    env:
+      TARGET_REPO: ${{ github.repository }}
+      ISSUE: ${{ inputs.issue }}
+      BRANCH: agent/issue-${{ inputs.issue }}-${{ github.run_id }}
+      RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Prepare the run's folders
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/agent-io" "$RUNNER_TEMP/output"
+          {
+            echo "STARTED_AT=$(date +%s)"
+            echo "AGENT_IO_DIR=$RUNNER_TEMP/agent-io"
+            echo "OUTPUT_DIR=$RUNNER_TEMP/output"
+          } >> "$GITHUB_ENV"
+
+      - name: Check out the factory at the pinned commit
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.FACTORY_REPO }}
+          ref: ${{ inputs.factory_sha }}
+          path: factory
+          persist-credentials: false
+
+      - name: Read budget.yml from main
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.FACTORY_REPO }}
+          ref: main
+          path: settings
+          sparse-checkout: budget.yml
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Use main's budget.yml
+        run: cp settings/budget.yml factory/budget.yml
+
+      - name: Check out the target repo
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: target
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: factory/.sandcastle/package-lock.json
+
+      - name: Install the factory's dependencies
+        run: npm ci --prefix factory/.sandcastle
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Install Bubblewrap
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          bwrap --ro-bind / / true
+
+      - name: Mint the ticket reader's token
+        id: read-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-issues: read
+
+      - name: Read the ticket and the App's git identity
+        id: ticket
+        env:
+          GH_TOKEN: ${{ steps.read-token.outputs.token }}
+          FACTORY_APP_SLUG: ${{ steps.read-token.outputs.app-slug }}
+        run: |
+          set -euo pipefail
+          factory/.sandcastle/node_modules/.bin/tsx factory/.sandcastle/agent-workflows/shared/read-ticket.ts
+          echo "bot-id=$(gh api "users/${FACTORY_APP_SLUG}%5Bbot%5D" --jq .id)" >> "$GITHUB_OUTPUT"
+
+      - name: Open the branch
+        id: branch
+        working-directory: target
+        env:
+          FACTORY_APP_SLUG: ${{ steps.read-token.outputs.app-slug }}
+          BOT_ID: ${{ steps.ticket.outputs.bot-id }}
+        run: |
+          set -euo pipefail
+          git config user.name "${FACTORY_APP_SLUG}[bot]"
+          git config user.email "${BOT_ID}+${FACTORY_APP_SLUG}[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          echo "base=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Start the credential relay
+        id: relay
+        env:
+          CLAUDE_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: factory/.sandcastle/agent-workflows/shared/start-relay.sh
+
+      - name: Build the ticket
+        working-directory: target
+        run: ../factory/.sandcastle/node_modules/.bin/tsx ../factory/.sandcastle/agent-workflows/implement/implement.ts
+
+      - name: Scan the agent's commits with the push guard
+        env:
+          REPO_DIR: target
+          PUSH_BASE: ${{ steps.branch.outputs.base }}
+          PUSH_HEAD: HEAD
+          CLAUDE_TOKEN_SHA256: ${{ steps.relay.outputs.claude-token-sha256 }}
+        run: factory/.sandcastle/node_modules/.bin/tsx factory/.sandcastle/agent-workflows/shared/guard-push.ts
+
+      - name: Decide whether to push
+        id: decide
+        env:
+          REPO_DIR: target
+          PUSH_BASE: ${{ steps.branch.outputs.base }}
+        run: factory/.sandcastle/node_modules/.bin/tsx factory/.sandcastle/agent-workflows/implement/decide-end.ts
+
+      - name: Mint the pusher's token
+        id: push-token
+        if: steps.decide.outputs.push == 'true'
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+
+      - name: Push
+        if: steps.decide.outputs.push == 'true'
+        working-directory: target
+        env:
+          GH_TOKEN: ${{ steps.push-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c core.hooksPath=/dev/null \
+            -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+            push "https://github.com/${TARGET_REPO}.git" "HEAD:refs/heads/${BRANCH}"
+
+      - name: Mint the pull request's token
+        id: pr-token
+        if: steps.decide.outputs.push == 'true'
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-pull-requests: write
+          permission-issues: write
+
+      - name: Open the draft pull request and hand it to review
+        id: pr
+        if: steps.decide.outputs.push == 'true'
+        env:
+          GH_TOKEN: ${{ steps.pr-token.outputs.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          HAND_OFF_LABEL: ${{ steps.decide.outputs.handoff-label }}
+        run: |
+          set -euo pipefail
+          body="$RUNNER_TEMP/pr-body.md"
+          if [ -s "$AGENT_IO_DIR/pr-body.md" ]; then cp "$AGENT_IO_DIR/pr-body.md" "$body"; else echo "Built by the implementer workflow." > "$body"; fi
+          printf '\n---\n\nCloses #%s. Built unattended by [this run](%s).\n' "$ISSUE" "$RUN_URL" >> "$body"
+          title="$(gh issue view "$ISSUE" --repo "$TARGET_REPO" --json title --jq .title)"
+          url="$(gh pr create --draft --repo "$TARGET_REPO" --base "$DEFAULT_BRANCH" --head "$BRANCH" \
+            --title "$title" --body-file "$body")"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          if [ -n "$HAND_OFF_LABEL" ]; then
+            gh pr edit "$url" --add-label "$HAND_OFF_LABEL"
+            echo "handed-off=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Mint the reporter's token
+        id: report-token
+        if: always()
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-issues: write
+
+      - name: Report back on the ticket
+        if: always()
+        env:
+          GH_TOKEN: ${{ steps.report-token.outputs.token }}
+          JOB_STATUS: ${{ job.status }}
+          PR_URL: ${{ steps.pr.outputs.url }}
+          HANDED_OFF: ${{ steps.pr.outputs.handed-off }}
+        run: factory/.sandcastle/node_modules/.bin/tsx factory/.sandcastle/agent-workflows/implement/report.ts
+
+  requeue:
+    needs: agent
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Start the requeue run
+        run: echo "The requeue run does not exist yet, so there is nothing to start."
