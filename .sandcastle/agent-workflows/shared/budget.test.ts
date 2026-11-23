@@ -110,9 +110,14 @@ describe("loading budget.yml", () => {
 });
 
 describe("the factory's budget.yml", () => {
-  const shipped = parseBudget(
-    fs.readFileSync(path.join(import.meta.dirname, "../../../budget.yml"), "utf8")
-  );
+  const text = fs.readFileSync(path.join(import.meta.dirname, "../../../budget.yml"), "utf8");
+  const shipped = parseBudget(text);
+
+  it("ends by pointing its reader at README → Releasing", () => {
+    expect(text.trimEnd().split("\n").at(-1)).toBe(
+      "# Settings are read from main; see README → Releasing."
+    );
+  });
 
   it("starts on Pro: a subscription, 8 agent runs a day, one at a time", () => {
     expect(shipped).toMatchObject({
