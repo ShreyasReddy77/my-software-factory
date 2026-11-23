@@ -48,7 +48,9 @@ Anything a host step reads from an agent is a `z.strictObject` from `zod/v4`,
 with `.describe()` on every field written as an instruction to the agent. It
 is produced with `runWithExtraction` and written with `writeJson` to
 `OUTPUT_DIR`. Parse once, at that edge; after it the value has a type and
-nothing checks it again. Agent output that "looks like JSON" and is read with
+nothing checks it again. A value that crosses a step or job boundary, through
+a file or a job output, is parsed again where it lands: it left the type
+system on the way. Agent output that "looks like JSON" and is read with
 `jq` breaks on the first run that wraps it in prose.
 
 ## Fail by throwing, loudly, at the top
@@ -57,6 +59,10 @@ A script that cannot continue throws or exits non-zero. It never returns
 half a result for the workflow to unpack. Read every env var through
 `required()`, so a missing secret fails at the first line instead of at the
 push forty minutes later. In shell steps, start with `set -euo pipefail`.
+
+The one exception is the step that runs the agent (`runAgentStep`). It never
+throws: it records how the agent ended in `agent-end.json`, so the push guard
+and the report after it still run and say what happened.
 
 ## Keep tokens out of the agent's reach
 

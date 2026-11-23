@@ -32,25 +32,30 @@ qualifier.
 its run summary shows today's agent runs against the daily cap, runs in flight
 against concurrency, whether a budget pause is open and until when, and how
 many items it restarted. The alarm is the budget-pause ticket, an open issue
-titled "Claude usage paused until <time>" or "Out of Claude credit". Close a
+titled "Claude usage paused until <time>", "Claude usage paused, reset time
+unknown" or "Out of Claude credit". Close a
 credit pause, or any pause with no reset time, yourself once Claude can be
 used again; the requeue run closes timed pauses.
 
 ## The workflows
 
 Each workflow's header comment is the source of truth for its trigger, tokens
-and setup. An **entry file** holds only the trigger, permissions and a call; it
-calls the reusable workflow at `@stable` on other repos and at `@main` on this
-one. Every agent task is a **gate run** (no agent, a few seconds: budget,
-pause and lock checks) that starts the task's **agent run**.
+and setup. An **entry file** holds only the trigger, permissions and a call to
+a **reusable workflow**, at `@stable` on other repos and at `@main` on this one.
+Every agent task is a **gate run** (no agent, a few seconds: budget, pause and
+lock checks) that starts the task's **agent run**. The names follow one rule:
+`agent-<task>.yml` is the label's entry file, `<task>-agent.yml` the agent
+run's entry file (it takes `factory_ref` from the gate run), and every
+reusable workflow ends in `-run.yml`. All jobs set the factory up with the
+composite action `.github/actions/setup-factory`.
 
 | Task | Started by | Entry files | Gate run | Agent run |
 |---|---|---|---|---|
-| Implement | `agent:implement` on an issue | `agent-implement.yml`, `implement-agent.yml` | `implement-gate.yml` | `implement-agent.yml` |
-| Implement-spec | `agent:implement-spec` on a spec issue: splits it into a queue, or builds the queue's next ready ticket | `agent-implement-spec.yml`, `agent-implement-spec-run.yml` | `implement-spec-gate.yml` | `implement-spec-agent.yml` |
+| Implement | `agent:implement` on an issue | `agent-implement.yml`, `implement-agent.yml` | `gate-run.yml` | `implement-agent-run.yml` |
+| Implement-spec | `agent:implement-spec` on a spec issue: splits it into a queue, or builds the queue's next ready ticket | `agent-implement-spec.yml`, `implement-spec-agent.yml` | `gate-run.yml` (with `implement-spec/gate-run.ts`) | `implement-spec-agent-run.yml` |
 | Review | `agent:review` on a factory PR | `agent-review.yml`, `review-agent.yml` | `gate-run.yml` | `review-agent-run.yml` |
 | Explore | `agent:explore` on an issue (one batch per repo) | `agent-explore.yml`, `explore-agent.yml` | `gate-run.yml` | `explore-agent-run.yml` |
-| Requeue run | hourly, the end of every agent run, or Run workflow | `requeue.yml` | none: no agent, never counts against the budget | |
+| Requeue run | hourly, the end of every agent run, or Run workflow | `requeue.yml` | none: no agent, never counts against the budget | `requeue-run.yml` (`@main` only) |
 
 The first entry file of each task is its operator's manual. Scripts and
 prompts live in `.sandcastle/agent-workflows/<task>/`; plan settings (models,
