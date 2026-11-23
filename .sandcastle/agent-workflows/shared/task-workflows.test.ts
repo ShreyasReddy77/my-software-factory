@@ -105,6 +105,14 @@ describe("the factory's workflow files", () => {
     expect(checkouts.length).toBeGreaterThan(0);
     for (const step of checkouts) expect(step.with?.["persist-credentials"]).toBe(false);
   });
+
+  it("let the gate run comment on and label a PR, since review gates PRs", () => {
+    const mint = Object.values(load("gate-run.yml").jobs)
+      .flatMap((job) => job.steps ?? [])
+      .find((step) => step.uses?.startsWith("actions/create-github-app-token@"));
+    expect(mint?.with?.["permission-issues"]).toBe("write");
+    expect(mint?.with?.["permission-pull-requests"]).toBe("write");
+  });
 });
 
 describe.each(tasks)("$task's workflows", ({ task, itemExpression, gateWith, dispatchInputs, runNameInput, lockKey, launches }) => {
