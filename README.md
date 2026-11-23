@@ -137,6 +137,12 @@ From a fresh clone of this repository, with `gh` signed in as its owner.
    Then label a small issue `agent:implement` and follow its gate run and
    agent run in the Actions tab.
 
+## Running the tests
+
+```sh
+npm test --prefix .sandcastle
+```
+
 ## Releasing the factory
 
 Other repos run the factory's code from the `stable` tag; this repository
