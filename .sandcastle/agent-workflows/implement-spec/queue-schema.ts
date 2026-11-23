@@ -3,7 +3,7 @@ import { z } from "zod/v4";
 // The split's answer: one spec turned into an ordered queue of tickets.
 // write-queue.ts creates one GitHub issue per entry, in `position` order, and
 // each later `agent:implement-spec` label builds the next ready one.
-export const specDecompositionSchema = z
+export const specQueueSchema = z
   .strictObject({
     tickets: z
       .array(
@@ -26,17 +26,6 @@ export const specDecompositionSchema = z
             .describe(
               "The ticket. Markdown, with a `## What` and a `## Done when` — the second is what the review workflow checks the pull request against, so it has to be checkable from a diff."
             ),
-          shape: z
-            .enum([
-              "service-module",
-              "route-only",
-              "ui-only",
-              "schema-change",
-              "cross-cutting",
-            ])
-            .describe(
-              "Where the ticket's change mostly lands. `service-module`: a rule, calculation or query behind a module's entry point, with its tests. `route-only`: a loader or action, and nothing it calls changes. `ui-only`: components and what they render, no data change. `schema-change`: the schema plus its migration. `cross-cutting`: more than one of these at once — usually a ticket worth splitting."
-            ),
           depends_on: z
             .array(z.number().int().min(1))
             .describe(
@@ -47,7 +36,7 @@ export const specDecompositionSchema = z
       .min(1)
       .max(12)
       .describe(
-        "The queue, in build order. Keep it short. A queue longer than about eight is a spec that wanted decomposing into two specs."
+        "The queue, in build order. Keep it short. A queue longer than about eight is a spec that wanted splitting into two specs."
       ),
   })
   .describe("The spec, cut into an ordered queue of tickets.");

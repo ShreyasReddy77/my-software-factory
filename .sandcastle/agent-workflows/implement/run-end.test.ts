@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { classifyAgentEnd, decideAgentRunEnd, reportAgentRun, type AgentRunFacts } from "./run-end";
-import { CeilingHit } from "../shared/common";
-import pauseErrors from "../shared/fixtures/pause-errors.json" with { type: "json" };
+import { decideAgentRunEnd, type AgentRunFacts } from "../shared/agent-run-end";
 import { readMarker } from "../shared/marker";
-
-const now = new Date("2026-11-22T14:00:00Z");
+import { reportAgentRun } from "./run-end";
 
 const built: AgentRunFacts = {
   agentEnd: { kind: "finished" },
@@ -80,38 +77,6 @@ describe("how an agent run ends", () => {
     const end = decideAgentRunEnd({ ...built, guard: undefined });
 
     expect(end).toMatchObject({ push: false, outcome: failedTry });
-  });
-});
-
-describe("telling a ceiling from a crash", () => {
-  it("reads the launcher's time ceiling as a ceiling hit", () => {
-    expect(classifyAgentEnd(new CeilingHit("implement", 45), now)).toEqual({
-      kind: "ceiling hit",
-      message: "implement hit its ceiling of 45 agent minutes",
-    });
-  });
-
-  it("reads Claude Code's max-turns stop as a ceiling hit", () => {
-    expect(classifyAgentEnd(new Error("Agent failed: error_max_turns"), now)).toMatchObject({ kind: "ceiling hit" });
-  });
-
-  it("reads anything else as a crash", () => {
-    expect(classifyAgentEnd(new Error("spawn claude ENOENT"), now)).toEqual({ kind: "crashed", message: "spawn claude ENOENT" });
-  });
-
-  it("reads a Claude usage limit as a pause, with its reset", () => {
-    expect(classifyAgentEnd(new Error(`Agent failed: ${pauseErrors.sessionLimit}`), now)).toEqual({
-      kind: "paused",
-      pause: { kind: "usage limit", resetsAt: "2026-11-22T15:45:00.000Z" },
-      message: `Agent failed: ${pauseErrors.sessionLimit}`,
-    });
-  });
-
-  it("reads running out of credit as a pause with no reset", () => {
-    expect(classifyAgentEnd(new Error(pauseErrors.creditTooLow), now)).toMatchObject({
-      kind: "paused",
-      pause: { kind: "out of credit" },
-    });
   });
 });
 

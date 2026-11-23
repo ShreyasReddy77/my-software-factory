@@ -1,6 +1,7 @@
 // The budget pause: what a Claude limit looks like in a failed agent run's
 // error, the words the factory reports it in, and the one budget-pause ticket.
 // Pure: the caller passes the clock and the factory's open issues.
+import { labels } from "./labels";
 
 export type Pause =
   | { readonly kind: "usage limit"; readonly resetsAt?: string }
@@ -67,7 +68,7 @@ export const pauseTicketBody = (pause: Pause): string =>
   [
     `A factory run hit a Claude limit. ${pauseItemText(pause)}.`,
     "",
-    "While this ticket is open, every gate run pauses its item, labelled `factory:paused`, without calling Claude. A pause is not a try.",
+    `While this ticket is open, every gate run pauses its item, labelled \`${labels.paused}\`, without calling Claude. A pause is not a try.`,
     "",
     resetOf(pause) === undefined
       ? "Close this ticket once Claude can be used again (for credit, after topping up); the requeue run then restarts paused work."

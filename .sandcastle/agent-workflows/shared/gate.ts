@@ -107,13 +107,18 @@ const midnightUtc = (now: Date): number =>
 export type AgentRunCounts = { readonly todaysRuns: number; readonly runsInFlight: number };
 
 // Today's agent runs are those created since midnight UTC; runs in flight are
-// every agent run not yet completed, whenever it started.
-export const countAgentRuns = (runLists: readonly RunList[], now: Date): AgentRunCounts => {
+// every agent run not yet completed, whenever it started, except the one
+// whose last job is finishing it.
+export const countAgentRuns = (
+  runLists: readonly RunList[],
+  now: Date,
+  { finishingRunId }: { readonly finishingRunId?: number } = {}
+): AgentRunCounts => {
   const agentRuns = namedRuns(runLists).filter((run) => run.runName.agentRun);
   const today = midnightUtc(now);
   return {
     todaysRuns: agentRuns.filter((run) => Date.parse(run.created_at) >= today).length,
-    runsInFlight: agentRuns.filter(inFlight).length,
+    runsInFlight: agentRuns.filter((run) => inFlight(run) && run.id !== finishingRunId).length,
   };
 };
 

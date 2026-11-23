@@ -9,34 +9,22 @@
 //   FACTORY_REPO where the budget-pause ticket lives; FACTORY_APP_SLUG the App's slug
 // A paused run also opens or comments on the budget-pause ticket, so GH_TOKEN
 // needs Issues write on FACTORY_REPO too.
-import * as fs from "node:fs";
-import * as path from "node:path";
+import { hostStepFailedEnd, type AgentRunEnd } from "../shared/agent-run-end";
 import { loadBudget } from "../shared/budget";
 import { recordBudgetPause } from "../shared/budget-pause-github";
-import { outputDir, required } from "../shared/common";
+import { required } from "../shared/common";
 import { ghApi, writeStepSummary } from "../shared/gh";
 import { labels } from "../shared/labels";
-import type { RunUsage } from "../shared/result-event";
+import { readAgentEndFile, readJson, runSeconds, usageFacts } from "../shared/run-files";
 import { renderRunSummary } from "../shared/run-summary";
-import { decideAgentRunEnd, reportAgentRun, type AgentRunEnd } from "./run-end";
-
-const readJson = <T>(name: string): T | undefined => {
-  const file = path.join(outputDir(), name);
-  return fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, "utf8")) as T) : undefined;
-};
+import { reportAgentRun } from "./run-end";
 
 const repo = required("TARGET_REPO");
 const issueNumber = Number(required("ISSUE"));
 const issuePath = `repos/${repo}/issues/${issueNumber}`;
 const prUrl = process.env.PR_URL || undefined;
 
-const end: AgentRunEnd =
-  readJson<AgentRunEnd>("run-end.json") ??
-  decideAgentRunEnd({
-    agentEnd: { kind: "crashed", message: "a host step failed before the run's end was decided" },
-    commits: 0,
-    treeClean: true,
-  });
+const end = readJson<AgentRunEnd>("run-end.json") ?? hostStepFailedEnd;
 const report = reportAgentRun(end, {
   ...(prUrl === undefined ? {} : { prUrl }),
   handedOff: process.env.HANDED_OFF === "true",
@@ -60,16 +48,14 @@ if (report.outcome.kind === "paused" && end.pause !== undefined)
     { factoryRepo: required("FACTORY_REPO"), factoryAppLogin: `${required("FACTORY_APP_SLUG")}[bot]` }
   );
 
-const usage = readJson<RunUsage>("agent-end.json") ?? {};
 writeStepSummary(
   renderRunSummary({
     task: "implement",
     targetRepo: repo,
     item: { kind: "issue", number: issueNumber },
     outcome: report.outcome,
-    ...(usage.turns === undefined ? {} : { turns: usage.turns }),
-    ...(usage.tokens === undefined ? {} : { tokens: usage.tokens }),
-    seconds: Math.max(0, Math.round(Date.now() / 1000) - Number(required("STARTED_AT"))),
+    ...usageFacts(readAgentEndFile()),
+    seconds: runSeconds(new Date()),
     model: loadBudget().tasks.implement.model,
     nextLabel: report.nextLabel,
   })

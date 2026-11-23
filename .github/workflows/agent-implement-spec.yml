@@ -11,7 +11,8 @@ name: Agent — Implement A Spec
 # WHAT IT DOES
 #   Implement-spec is two Actions runs, and this entry file starts the first.
 #
-#   1. The gate run (implement-spec-gate.yml, a few seconds, no agent). It
+#   1. The gate run (gate-run.yml with implement-spec/gate-run.ts, a few
+#      seconds, no agent). It
 #      pins the factory commit the whole task will use (`main` here: the
 #      factory repo runs @main; other repos run @stable), reads budget.yml
 #      from main, and re-reads the spec with its own App token. Then, in
@@ -27,8 +28,9 @@ name: Agent — Implement A Spec
 #          `spec:<n>`, and does one of four things:
 #            * no queue yet: it claims the spec and starts the SPLIT;
 #            * a ready ticket (the lowest open `Position:` whose `Depends on:`
-#              positions are all closed, and that no run holds, parks or
-#              queues): if an earlier run holds that ticket's lock it queues
+#              positions are all closed, that no run holds, parks or
+#              queues, and that no open PR will close): if an earlier run
+#              holds that ticket's lock it queues
 #              the spec; otherwise it claims the ticket and starts its BUILD;
 #            * every ticket closed: it says the queue is drained;
 #            * open tickets but none ready: it names them.
@@ -36,8 +38,8 @@ name: Agent — Implement A Spec
 #      Queued and paused specs carry a hidden marker comment naming the label
 #      they restart as, and the requeue run restarts them.
 #
-#   2. The agent run (agent-implement-spec-run.yml, which calls
-#      implement-spec-agent.yml at the same ref). It checks the factory out at
+#   2. The agent run (implement-spec-agent.yml, which calls
+#      implement-spec-agent-run.yml at the ref the gate run passed). It checks the factory out at
 #      the pinned commit, starts the credential relay, and runs an agent
 #      under bwrap(). The agent holds no GitHub credential and never the
 #      Claude token.
@@ -51,7 +53,8 @@ name: Agent — Implement A Spec
 #          exactly implement's agent run, with the spec as context. The push
 #          guard scans the agent's commits; built and clean, it pushes
 #          `agent/issue-<n>-<run id>`, opens a DRAFT pull request, adds
-#          `agent:review`, and closes the ticket so the queue moves on. A
+#          `agent:review`; the ticket stays open, held from the queue, until
+#          its PR merges and its "Closes #n" closes it. A
 #          ceiling hit pushes a draft and parks the ticket; a refusal, crash
 #          or empty run pushes nothing and parks it with `agent:blocked`. A
 #          parked ticket is skipped until a person takes `agent:blocked` off.
@@ -101,16 +104,24 @@ permissions:
 jobs:
   gate-stable:
     if: github.event.label.name == 'agent:implement-spec' && github.repository != 'ShreyasReddy77/my-software-factory'
-    uses: ShreyasReddy77/my-software-factory/.github/workflows/implement-spec-gate.yml@stable
+    uses: ShreyasReddy77/my-software-factory/.github/workflows/gate-run.yml@stable
     with:
       factory_ref: stable
+      task: implement-spec
+      item: ${{ github.event.issue.number }}
+      agent_workflow: implement-spec-agent.yml
+      gate_script: implement-spec/gate-run.ts
     secrets:
       FACTORY_APP_PRIVATE_KEY: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
 
   gate-main:
     if: github.event.label.name == 'agent:implement-spec' && github.repository == 'ShreyasReddy77/my-software-factory'
-    uses: ShreyasReddy77/my-software-factory/.github/workflows/implement-spec-gate.yml@main
+    uses: ShreyasReddy77/my-software-factory/.github/workflows/gate-run.yml@main
     with:
       factory_ref: main
+      task: implement-spec
+      item: ${{ github.event.issue.number }}
+      agent_workflow: implement-spec-agent.yml
+      gate_script: implement-spec/gate-run.ts
     secrets:
       FACTORY_APP_PRIVATE_KEY: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}

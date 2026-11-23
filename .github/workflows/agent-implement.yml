@@ -9,7 +9,7 @@ name: Agent — Implement A Ticket
 # WHAT IT DOES
 #   Implement is two Actions runs, and this entry file starts the first.
 #
-#   1. The gate run (implement-gate.yml, a few seconds, no agent). It pins the
+#   1. The gate run (gate-run.yml, a few seconds, no agent). It pins the
 #      factory commit the whole task will use (`main` here: the factory repo
 #      runs @main; other repos run @stable), reads budget.yml from main, and
 #      re-reads the ticket with its own App token. Then, in this order:
@@ -27,7 +27,8 @@ name: Agent — Implement A Ticket
 #      `agent:in-progress`, and starts the agent run by workflow_dispatch,
 #      passing the pinned commit, the ticket and the job timeout.
 #
-#   2. The agent run (implement-agent.yml). It checks the factory out at the
+#   2. The agent run (implement-agent.yml, which calls implement-agent-run.yml
+#      at the ref the gate run passed). It checks the factory out at the
 #      pinned commit, starts the credential relay, and runs the implement
 #      agent (.sandcastle/agent-workflows/implement/) under bwrap() with the
 #      model and ceiling budget.yml gives implement. The agent commits; it
@@ -81,16 +82,22 @@ permissions:
 jobs:
   gate-stable:
     if: github.event.label.name == 'agent:implement' && github.repository != 'ShreyasReddy77/my-software-factory'
-    uses: ShreyasReddy77/my-software-factory/.github/workflows/implement-gate.yml@stable
+    uses: ShreyasReddy77/my-software-factory/.github/workflows/gate-run.yml@stable
     with:
       factory_ref: stable
+      task: implement
+      item: ${{ github.event.issue.number }}
+      agent_workflow: implement-agent.yml
     secrets:
       FACTORY_APP_PRIVATE_KEY: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
 
   gate-main:
     if: github.event.label.name == 'agent:implement' && github.repository == 'ShreyasReddy77/my-software-factory'
-    uses: ShreyasReddy77/my-software-factory/.github/workflows/implement-gate.yml@main
+    uses: ShreyasReddy77/my-software-factory/.github/workflows/gate-run.yml@main
     with:
       factory_ref: main
+      task: implement
+      item: ${{ github.event.issue.number }}
+      agent_workflow: implement-agent.yml
     secrets:
       FACTORY_APP_PRIVATE_KEY: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}

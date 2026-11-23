@@ -45,3 +45,21 @@ export const issueWritesMutation = (writes: readonly IssueWrite[]): GraphqlReque
 
   return { query: `mutation(${declarations.join(", ")}) {\n  ${fields.join("\n  ")}\n}`, variables };
 };
+
+export type NewIssue = {
+  readonly title: string;
+  readonly body: string;
+  readonly labelIds: readonly string[];
+};
+
+export const createIssuesMutation = (repositoryId: string, issues: readonly NewIssue[]): GraphqlRequest => {
+  if (issues.length === 0) throw new Error("No issues to create");
+  const declarations = ["$repo: ID!"];
+  const variables: Record<string, string | readonly string[]> = { repo: repositoryId };
+  const fields = issues.map((issue, n) => {
+    declarations.push(`$n${n}title: String!`, `$n${n}body: String!`, `$n${n}labels: [ID!]`);
+    Object.assign(variables, { [`n${n}title`]: issue.title, [`n${n}body`]: issue.body, [`n${n}labels`]: issue.labelIds });
+    return `n${n}: createIssue(input: { repositoryId: $repo, title: $n${n}title, body: $n${n}body, labelIds: $n${n}labels }) { issue { number } }`;
+  });
+  return { query: `mutation(${declarations.join(", ")}) {\n  ${fields.join("\n  ")}\n}`, variables };
+};

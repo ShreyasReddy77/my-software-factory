@@ -321,4 +321,13 @@ describe("counting agent runs", () => {
       runsInFlight: 2,
     });
   });
+
+  it("does not count the finishing agent run that started this requeue run as in flight, but still counts it today", () => {
+    const runs = [
+      run({ id: 7, display_title: "[ticket owner/repo#5] implement" }),
+      run({ id: 8, display_title: "[pr owner/repo#9] review" }),
+    ];
+
+    expect(countAgentRuns([{ repo, runs }], now, { finishingRunId: 7 })).toEqual({ todaysRuns: 2, runsInFlight: 1 });
+  });
 });

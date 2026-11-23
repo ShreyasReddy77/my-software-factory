@@ -39,16 +39,9 @@ jobs:
       agent-end: ${{ steps.hand-on.outputs.agent-end }}
       started-at: ${{ steps.folders.outputs.started-at }}
     steps:
-      - name: Prepare the run's folders
+      - name: Note the run's start
         id: folders
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/agent-io" "$RUNNER_TEMP/output"
-          echo "started-at=$(date +%s)" >> "$GITHUB_OUTPUT"
-          {
-            echo "AGENT_IO_DIR=$RUNNER_TEMP/agent-io"
-            echo "OUTPUT_DIR=$RUNNER_TEMP/output"
-          } >> "$GITHUB_ENV"
+        run: echo "started-at=$(date +%s)" >> "$GITHUB_OUTPUT"
 
       - name: Check out the factory at the pinned commit
         uses: actions/checkout@v4
@@ -58,19 +51,6 @@ jobs:
           path: factory
           persist-credentials: false
 
-      - name: Read budget.yml from main
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ env.FACTORY_REPO }}
-          ref: main
-          path: settings
-          sparse-checkout: budget.yml
-          sparse-checkout-cone-mode: false
-          persist-credentials: false
-
-      - name: Use main's budget.yml
-        run: cp settings/budget.yml factory/budget.yml
-
       - name: Check out the target repo
         uses: actions/checkout@v4
         with:
@@ -78,26 +58,11 @@ jobs:
           path: target
           persist-credentials: false
 
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
+      - name: Set up the factory and the sandbox
+        uses: ./factory/.github/actions/setup-factory
         with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: factory/.sandcastle/package-lock.json
-
-      - name: Install the factory's dependencies
-        run: npm ci --prefix factory/.sandcastle
-
-      - name: Install Claude Code
-        run: npm install -g @anthropic-ai/claude-code
-
-      - name: Install Bubblewrap
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y bubblewrap
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          bwrap --ro-bind / / true
+          factory-repo: ${{ env.FACTORY_REPO }}
+          agent: "true"
 
       - name: Mint the batch reader's token
         id: read-token
@@ -150,15 +115,10 @@ jobs:
           path: factory
           persist-credentials: false
 
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
+      - name: Set up the factory
+        uses: ./factory/.github/actions/setup-factory
         with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: factory/.sandcastle/package-lock.json
-
-      - name: Install the factory's dependencies
-        run: npm ci --prefix factory/.sandcastle
+          factory-repo: ${{ env.FACTORY_REPO }}
 
       - name: Mint the apply job's token
         id: token
@@ -190,28 +150,10 @@ jobs:
           path: factory
           persist-credentials: false
 
-      - name: Read budget.yml from main
-        uses: actions/checkout@v4
+      - name: Set up the factory
+        uses: ./factory/.github/actions/setup-factory
         with:
-          repository: ${{ env.FACTORY_REPO }}
-          ref: main
-          path: settings
-          sparse-checkout: budget.yml
-          sparse-checkout-cone-mode: false
-          persist-credentials: false
-
-      - name: Use main's budget.yml
-        run: cp settings/budget.yml factory/budget.yml
-
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: factory/.sandcastle/package-lock.json
-
-      - name: Install the factory's dependencies
-        run: npm ci --prefix factory/.sandcastle
+          factory-repo: ${{ env.FACTORY_REPO }}
 
       - name: Mint the finisher's token
         id: token
@@ -254,4 +196,4 @@ jobs:
       - name: Start the requeue run
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
-        run: gh workflow run requeue.yml --repo "$FACTORY_REPO" --ref main
+        run: gh workflow run requeue.yml --repo "$FACTORY_REPO" --ref main -f finishing_run_id="$GITHUB_RUN_ID"

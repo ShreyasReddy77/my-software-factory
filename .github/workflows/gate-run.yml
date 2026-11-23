@@ -1,8 +1,9 @@
 name: Gate run
 
-# The gate run of every task that calls it: review and explore so far. Called
-# by a task's entry file at @stable or @main; that entry file's header is the
-# operator's manual for the task. Its logic is shared/gate-run.ts.
+# The gate run of every agent task. Called by a task's entry file
+# (agent-<task>.yml) at @stable or @main; that entry file's header is the
+# operator's manual for the task. Its logic is shared/gate-run.ts, or the
+# task's own gate script where the entry file names one (implement-spec).
 
 on:
   workflow_call:
@@ -20,9 +21,14 @@ on:
         type: string
         required: true
       agent_workflow:
-        description: The agent run's entry file, started by workflow_dispatch
+        description: The agent run's entry file (<task>-agent.yml), started by workflow_dispatch
         type: string
         required: true
+      gate_script:
+        description: The gate's host step, under .sandcastle/agent-workflows/
+        type: string
+        required: false
+        default: shared/gate-run.ts
     secrets:
       FACTORY_APP_PRIVATE_KEY:
         required: true
@@ -50,28 +56,10 @@ jobs:
         id: pin
         run: echo "sha=$(git -C factory rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Read budget.yml from main
-        uses: actions/checkout@v4
+      - name: Set up the factory
+        uses: ./factory/.github/actions/setup-factory
         with:
-          repository: ${{ env.FACTORY_REPO }}
-          ref: main
-          path: settings
-          sparse-checkout: budget.yml
-          sparse-checkout-cone-mode: false
-          persist-credentials: false
-
-      - name: Use main's budget.yml
-        run: cp settings/budget.yml factory/budget.yml
-
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: factory/.sandcastle/package-lock.json
-
-      - name: Install the factory's dependencies
-        run: npm ci --prefix factory/.sandcastle
+          factory-repo: ${{ env.FACTORY_REPO }}
 
       - name: Mint the gate run's token
         id: token
@@ -94,4 +82,5 @@ jobs:
           FACTORY_SHA: ${{ steps.pin.outputs.sha }}
           AGENT_WORKFLOW: ${{ inputs.agent_workflow }}
           FACTORY_APP_SLUG: ${{ steps.token.outputs.app-slug }}
-        run: factory/.sandcastle/node_modules/.bin/tsx factory/.sandcastle/agent-workflows/shared/gate-run.ts
+          GATE_SCRIPT: ${{ inputs.gate_script }}
+        run: factory/.sandcastle/node_modules/.bin/tsx "factory/.sandcastle/agent-workflows/$GATE_SCRIPT"

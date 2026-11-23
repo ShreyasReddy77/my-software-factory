@@ -12,13 +12,14 @@ follow them.
   with, and none failing. Run the repository's own checks before you finish;
   install its dependencies yourself if they are missing.
 - Commit with `git commit` on the current branch. When a pre-commit hook
-  rejects a commit, fix the work and commit again. The hook stays as it is:
-  no `--no-verify` and no changes to the hook or `core.hooksPath`.
+  rejects a commit, fix the work and commit again, with every hook running
+  as the repository configures it.
 - Finish with at least one commit and a clean working tree. The workflow
   pushes and opens the pull request.
 - Leave `.github/` untouched. A change there is refused at the push, and the
   whole run's work with it. When the ticket needs one, say so in the PR body
   instead.
 
-Write {{AGENT_IO_DIR}}/pr-body.md in the voice of the `pr` skill: what the
+Write {{AGENT_IO_DIR}}/pr-body.md in the voice of the pr skill,
+.agents/skills/pr/SKILL.md if the repository has it: what the
 ticket asked for, what you built, what you deliberately left out.

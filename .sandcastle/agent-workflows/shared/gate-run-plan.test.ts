@@ -18,15 +18,16 @@ describe("the gate run's plan", () => {
     const plan = planGateRun({ kind: "proceed" }, context);
 
     expect(plan.actions).toEqual([
-      { kind: "comment", body: expect.stringContaining("<!-- factory:restart-as v1 agent:implement -->") },
-      { kind: "add label", label: "agent:in-progress" },
-      { kind: "remove label", label: "agent:implement" },
+      { kind: "comment", on: 5, body: expect.stringContaining("<!-- factory:restart-as v1 agent:implement -->") },
+      { kind: "add label", on: 5, label: "agent:in-progress" },
+      { kind: "remove label", on: 5, label: "agent:implement" },
       {
         kind: "dispatch agent run",
         factoryRepo: "owner/factory",
         workflow: "implement-agent.yml",
         ref: "main",
         inputs: {
+          factory_ref: "main",
           factory_sha: "0123456789abcdef0123456789abcdef01234567",
           issue: "5",
           job_timeout: "60",
@@ -39,9 +40,9 @@ describe("the gate run's plan", () => {
     const plan = planGateRun({ kind: "queued", reason: "lock" }, context);
 
     expect(plan.actions).toEqual([
-      { kind: "comment", body: expect.stringContaining("<!-- factory:restart-as v1 agent:implement -->") },
-      { kind: "add label", label: "factory:queued" },
-      { kind: "remove label", label: "agent:implement" },
+      { kind: "comment", on: 5, body: expect.stringContaining("<!-- factory:restart-as v1 agent:implement -->") },
+      { kind: "add label", on: 5, label: "factory:queued" },
+      { kind: "remove label", on: 5, label: "agent:implement" },
     ]);
   });
 
@@ -55,8 +56,8 @@ describe("the gate run's plan", () => {
     const plan = planGateRun({ kind: "paused" }, context);
 
     expect(plan.actions.slice(1)).toEqual([
-      { kind: "add label", label: "factory:paused" },
-      { kind: "remove label", label: "agent:implement" },
+      { kind: "add label", on: 5, label: "factory:paused" },
+      { kind: "remove label", on: 5, label: "agent:implement" },
     ]);
   });
 
@@ -117,14 +118,14 @@ describe("the gate run's plan for review, under a per-PR lock", () => {
     const plan = planGateRun({ kind: "proceed" }, review);
 
     expect(plan.actions.slice(1)).toEqual([
-      { kind: "add label", label: "agent:in-progress" },
-      { kind: "remove label", label: "agent:review" },
+      { kind: "add label", on: 9, label: "agent:in-progress" },
+      { kind: "remove label", on: 9, label: "agent:review" },
       {
         kind: "dispatch agent run",
         factoryRepo: "owner/factory",
         workflow: "review-agent.yml",
         ref: "main",
-        inputs: { factory_sha: "0123456789abcdef0123456789abcdef01234567", pr: "9", job_timeout: "30" },
+        inputs: { factory_ref: "main", factory_sha: "0123456789abcdef0123456789abcdef01234567", pr: "9", job_timeout: "30" },
       },
     ]);
   });
@@ -148,14 +149,14 @@ describe("the gate run's plan for explore, under a per-repo lock", () => {
     const plan = planGateRun({ kind: "proceed" }, explore);
 
     expect(plan.actions).toEqual([
-      { kind: "comment", body: expect.stringContaining("<!-- factory:restart-as v1 agent:explore -->") },
+      { kind: "comment", on: 7, body: expect.stringContaining("<!-- factory:restart-as v1 agent:explore -->") },
       { kind: "claim batch", numbers: [3, 7, 12], add: "agent:in-progress", remove: "agent:explore" },
       {
         kind: "dispatch agent run",
         factoryRepo: "owner/factory",
         workflow: "explore-agent.yml",
         ref: "main",
-        inputs: { factory_sha: "0123456789abcdef0123456789abcdef01234567", batch: "[3,7,12]", job_timeout: "30" },
+        inputs: { factory_ref: "main", factory_sha: "0123456789abcdef0123456789abcdef01234567", batch: "[3,7,12]", job_timeout: "30" },
       },
     ]);
   });
@@ -170,8 +171,8 @@ describe("the gate run's plan for explore, under a per-repo lock", () => {
     const plan = planGateRun({ kind: "queued", reason: "lock" }, explore);
 
     expect(plan.actions.slice(1)).toEqual([
-      { kind: "add label", label: "factory:queued" },
-      { kind: "remove label", label: "agent:explore" },
+      { kind: "add label", on: 7, label: "factory:queued" },
+      { kind: "remove label", on: 7, label: "agent:explore" },
     ]);
   });
 });

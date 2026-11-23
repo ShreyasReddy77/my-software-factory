@@ -4,8 +4,8 @@
 import type { Budget } from "../shared/budget";
 import type { BudgetPauseState } from "../shared/budget-pause";
 import type { AgentRunCounts } from "../shared/gate";
-import { labels, triggerLabels, type TriggerLabel } from "../shared/labels";
-import { isAgentTask, lockScopes } from "../shared/tasks";
+import { labels, taskOfTriggerLabel, triggerLabels, waitingLabels, type TriggerLabel } from "../shared/labels";
+import { lockScopes } from "../shared/tasks";
 import type { BudgetGauge } from "../shared/run-summary";
 
 // An open issue or PR labelled factory:queued or factory:paused. restartAs is
@@ -42,9 +42,7 @@ export type RequeuePlan = {
   readonly gauge: BudgetGauge;
 };
 
-const waitingLabels: readonly string[] = [labels.queued, labels.paused];
-
-const taskOf = (label: TriggerLabel): string => label.slice("agent:".length);
+const taskOf = taskOfTriggerLabel;
 
 const freeSlots = ({ budget, runCounts }: RequeueInput): number =>
   Math.max(0, Math.min(budget.dailyRuns - runCounts.todaysRuns, budget.concurrentRuns - runCounts.runsInFlight));
@@ -82,7 +80,7 @@ const isRestartable = (item: WaitingItem): item is Restartable =>
 // batch, so they share one slot; every other item takes its own.
 const slotKey = (item: Restartable): string => {
   const task = taskOf(item.restartAs);
-  return isAgentTask(task) && lockScopes[task] === "repo"
+  return lockScopes[task] === "repo"
     ? `${task} ${item.repo.toLowerCase()}`
     : `${item.kind} ${item.repo.toLowerCase()}#${item.number}`;
 };
