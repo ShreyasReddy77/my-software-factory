@@ -483,6 +483,8 @@ Built in order, each its own `/to-spec` → `/to-tickets` → `/implement-spec` 
 
 **Still works when it lands:** v0's four tasks run on the factory repo itself, label-triggered as before, with drafts and a human merging every PR, now sandboxed, budgeted and released through `stable`.
 
+**Proven after merge, not before.** The factory runs its own code at `@main`, so no Foundation workflow can run on the factory repo until Foundation is on `main`; a trial before the PR is marked ready, as the spec first asked, can't happen. The PR is marked ready with the trial pending, and the trial runs on `main` straight after the merge, with failures fixed in follow-up PRs. (Foundation session)
+
 ### 2. Targets
 
 **Delivers:**
