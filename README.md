@@ -67,7 +67,11 @@ always read from `main`.
 From a fresh clone of this repository, with `gh` signed in as its owner.
 
 1. **Create the GitHub App** (Settings → Developer settings → GitHub Apps →
-   New GitHub App). Untick Webhook. Repository permissions, exactly these:
+   New GitHub App). GitHub requires a Homepage URL but the factory never uses
+   it: give this repository's URL
+   (`https://github.com/ShreyasReddy77/my-software-factory`). Leave Callback
+   URL and Setup URL blank, untick Webhook, and install it "Only on this
+   account". Repository permissions, exactly these:
 
    | Permission | Access | Used for |
    |---|---|---|
