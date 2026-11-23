@@ -1,0 +1,86 @@
+name: Gate run
+
+# The gate run of every agent task. Called by a task's entry file
+# (agent-<task>.yml) at @stable or @main; that entry file's header is the
+# operator's manual for the task. Its logic is shared/gate-run.ts, or the
+# task's own gate script where the entry file names one (implement-spec).
+
+on:
+  workflow_call:
+    inputs:
+      factory_ref:
+        description: stable or main, the factory ref this task runs
+        type: string
+        required: true
+      task:
+        description: The agent task, e.g. review
+        type: string
+        required: true
+      item:
+        description: The labelled issue's or PR's number
+        type: string
+        required: true
+      agent_workflow:
+        description: The agent run's entry file (<task>-agent.yml), started by workflow_dispatch
+        type: string
+        required: true
+      gate_script:
+        description: The gate's host step, under .sandcastle/agent-workflows/
+        type: string
+        required: false
+        default: shared/gate-run.ts
+    secrets:
+      FACTORY_APP_PRIVATE_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  FACTORY_REPO: ShreyasReddy77/my-software-factory
+
+jobs:
+  gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the factory at the ref this task runs
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.FACTORY_REPO }}
+          ref: ${{ inputs.factory_ref }}
+          path: factory
+          persist-credentials: false
+
+      - name: Pin the factory commit
+        id: pin
+        run: echo "sha=$(git -C factory rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up the factory
+        uses: ./factory/.github/actions/setup-factory
+        with:
+          factory-repo: ${{ env.FACTORY_REPO }}
+
+      - name: Mint the gate run's token
+        id: token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-issues: write
+          permission-actions: write
+
+      - name: Gate the item
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          TASK: ${{ inputs.task }}
+          TARGET_REPO: ${{ github.repository }}
+          ISSUE: ${{ inputs.item }}
+          FACTORY_REF: ${{ inputs.factory_ref }}
+          FACTORY_SHA: ${{ steps.pin.outputs.sha }}
+          AGENT_WORKFLOW: ${{ inputs.agent_workflow }}
+          FACTORY_APP_SLUG: ${{ steps.token.outputs.app-slug }}
+          GATE_SCRIPT: ${{ inputs.gate_script }}
+        run: factory/.sandcastle/node_modules/.bin/tsx "factory/.sandcastle/agent-workflows/$GATE_SCRIPT"

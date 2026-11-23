@@ -1,0 +1,54 @@
+name: Explore — agent run
+
+# Started only by explore's gate run, by workflow_dispatch. It holds only the
+# trigger, permissions, run name and a call: the jobs run from
+# explore-agent-run.yml at @stable or @main, at the commit the gate run pinned.
+# agent-explore.yml's header is the operator's manual.
+
+on:
+  workflow_dispatch:
+    inputs:
+      factory_ref:
+        description: stable or main, the factory ref this task runs
+        type: string
+        required: true
+      factory_sha:
+        description: The factory commit the gate run pinned
+        type: string
+        required: true
+      batch:
+        description: The batch the gate run claimed, a JSON array of issue numbers
+        type: string
+        required: true
+      job_timeout:
+        description: explore's agent_minutes plus 15
+        type: string
+        required: true
+
+run-name: "[repo ${{ github.repository }}] explore"
+
+permissions:
+  contents: read
+
+jobs:
+  agent-stable:
+    if: inputs.factory_ref == 'stable'
+    uses: ShreyasReddy77/my-software-factory/.github/workflows/explore-agent-run.yml@stable
+    with:
+      factory_sha: ${{ inputs.factory_sha }}
+      batch: ${{ inputs.batch }}
+      job_timeout: ${{ inputs.job_timeout }}
+    secrets:
+      FACTORY_APP_PRIVATE_KEY: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+  agent-main:
+    if: inputs.factory_ref == 'main'
+    uses: ShreyasReddy77/my-software-factory/.github/workflows/explore-agent-run.yml@main
+    with:
+      factory_sha: ${{ inputs.factory_sha }}
+      batch: ${{ inputs.batch }}
+      job_timeout: ${{ inputs.job_timeout }}
+    secrets:
+      FACTORY_APP_PRIVATE_KEY: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

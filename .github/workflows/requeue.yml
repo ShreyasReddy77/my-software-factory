@@ -1,0 +1,84 @@
+name: Requeue run
+
+# WHAT TRIGGERS IT
+#   Three things, all in the factory repo only:
+#     - a clock, hourly at the top of the hour (UTC, best effort; GitHub turns
+#       scheduled workflows off after 60 days without activity in a public
+#       repo, so the next trigger keeps it alive);
+#     - the last job of every agent run (implement, implement-spec, review,
+#       explore), whether the run succeeded or failed, by workflow_dispatch
+#       with an App token, passing its own run id as `finishing_run_id`;
+#     - a person, from the Actions tab (Run workflow).
+#   A plain Actions concurrency group keeps one requeue run going and one
+#   waiting and drops the rest. That is safe: the waiting run re-reads
+#   everything, so a dropped copy loses nothing. It is the only workflow
+#   with a concurrency group; every other run locks by its run name.
+#
+# WHAT IT DOES
+#   It is the factory's only clock in Foundation, and calls no agent, so it
+#   never counts against the budget. This entry file holds the trigger, the
+#   concurrency group and one call to requeue-run.yml at @main: the requeue
+#   run exists only in the factory, which runs @main, so it has no @stable
+#   job. Its logic is .sandcastle/agent-workflows/requeue/. In order:
+#     1. Counts today's agent runs (since midnight UTC) and the agent runs in
+#        flight, from one run list, against budget.yml's `daily_runs` and
+#        `concurrent_runs`. The agent run named by `finishing_run_id` counts
+#        today but not as in flight: it is ending, and counting it would
+#        leave no slot for the work it frees.
+#     2. Reads the budget-pause ticket. A timed pause whose reset has passed
+#        is closed with a comment. A pause with no reset time (out of credit,
+#        or a usage limit that named none) is never closed here: the human
+#        closes it. While any pause stays open, nothing restarts.
+#     3. Restarts open issues and PRs labelled `factory:queued` or
+#        `factory:paused` into the free slots (the fewer of the cap's and
+#        concurrency's), in budget.yml's priority order, oldest first within
+#        each group: it removes the waiting label, then re-adds the trigger
+#        label the item's hidden marker names, with an App token. The
+#        restarted task's gate run re-checks every gate and its lock, and
+#        simply queues again if it loses a race. Waiting explore issues of one
+#        repo restart together and take one slot, as the one batch they
+#        become.
+#   It never restarts an item that carries `agent:blocked`,
+#   `factory:needs-human`, `needs-a-human` or `agent:in-progress`, one whose
+#   trigger label is already back, or one with no marker the App wrote.
+#   Removing `factory:queued` or `factory:paused` by hand cancels an item.
+#   Its run summary is the budget gauge: today's agent runs against the cap,
+#   runs in flight against concurrency, whether a budget pause is open and
+#   until when, and how many items it restarted.
+#
+# WHAT IT NEEDS
+#   vars.FACTORY_APP_ID and secrets.FACTORY_APP_PRIVATE_KEY — the factory's
+#     GitHub App. Its one token here is for this repository: Issues and Pull
+#     requests write (labels, the pause ticket), Actions read (the run list).
+#     Labels the App adds start workflows, which is what restarts a task.
+#   budget.yml on main — the caps and the priority order.
+#   The labels, created once: see the README.
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+    inputs:
+      finishing_run_id:
+        description: The agent run whose last job started this run, if any
+        type: string
+        required: false
+        default: ""
+
+run-name: Requeue run
+
+concurrency:
+  group: requeue-run
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  requeue:
+    if: github.repository == 'ShreyasReddy77/my-software-factory'
+    uses: ShreyasReddy77/my-software-factory/.github/workflows/requeue-run.yml@main
+    with:
+      finishing_run_id: ${{ inputs.finishing_run_id }}
+    secrets:
+      FACTORY_APP_PRIVATE_KEY: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}

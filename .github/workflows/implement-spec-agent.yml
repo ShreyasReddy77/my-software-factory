@@ -1,0 +1,66 @@
+name: Implement-spec — agent run
+
+# Started only by implement-spec's gate run, by workflow_dispatch at the
+# factory ref the task runs. agent-implement-spec.yml's header is the
+# operator's manual; this entry file names the run with its lock key and calls
+# the agent run at the ref the gate run pinned.
+
+on:
+  workflow_dispatch:
+    inputs:
+      factory_ref:
+        description: stable or main, the factory ref this task runs
+        type: string
+        required: true
+      factory_sha:
+        description: The factory commit the gate run pinned
+        type: string
+        required: true
+      mode:
+        description: split (the spec has no queue) or build (one queue ticket)
+        type: string
+        required: true
+      spec:
+        description: The spec issue's number
+        type: string
+        required: true
+      issue:
+        description: The issue this run works and locks, the spec for a split or the ticket for a build
+        type: string
+        required: true
+      job_timeout:
+        description: The budget line's agent_minutes plus 15
+        type: string
+        required: true
+
+run-name: "[ticket ${{ github.repository }}#${{ inputs.issue }}] implement-spec"
+
+permissions:
+  contents: read
+
+jobs:
+  agent-stable:
+    if: inputs.factory_ref == 'stable'
+    uses: ShreyasReddy77/my-software-factory/.github/workflows/implement-spec-agent-run.yml@stable
+    with:
+      factory_sha: ${{ inputs.factory_sha }}
+      mode: ${{ inputs.mode }}
+      spec: ${{ inputs.spec }}
+      issue: ${{ inputs.issue }}
+      job_timeout: ${{ inputs.job_timeout }}
+    secrets:
+      FACTORY_APP_PRIVATE_KEY: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+  agent-main:
+    if: inputs.factory_ref == 'main'
+    uses: ShreyasReddy77/my-software-factory/.github/workflows/implement-spec-agent-run.yml@main
+    with:
+      factory_sha: ${{ inputs.factory_sha }}
+      mode: ${{ inputs.mode }}
+      spec: ${{ inputs.spec }}
+      issue: ${{ inputs.issue }}
+      job_timeout: ${{ inputs.job_timeout }}
+    secrets:
+      FACTORY_APP_PRIVATE_KEY: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

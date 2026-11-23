@@ -1,14 +1,22 @@
+// A queue ticket's build host step, on implement's budget line. It holds no
+// secret: the agent reaches Claude through the relay an earlier step started.
+//   AGENT_IO_DIR  a folder shared with the sandbox: ticket.md and spec.md in, pr-body.md out
+//   OUTPUT_DIR    where agent-end.json lands: how the agent ended, its turns and tokens
+// Run it from the target repo's checkout, on the branch the agent commits to.
 import * as path from "node:path";
 import * as sandcastle from "@ai-hero/sandcastle";
-import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
-import { claudeAgent } from "../shared/common";
+import { runAgentStep } from "../shared/agent-step";
+import { required, sandboxedAgent } from "../shared/common";
 
-// Like the one-off implementer: the agent edits and commits, through the
-// pre-commit hook; the workflow pushes and opens the PR.
-await sandcastle.run({
-  name: "build-ticket",
-  agent: claudeAgent(),
-  sandbox: noSandbox(),
-  logging: { type: "stdout" },
-  promptFile: path.join(import.meta.dirname, "build-prompt.md"),
-});
+const ioDir = required("AGENT_IO_DIR");
+
+await runAgentStep("build", (logging) =>
+  sandcastle.run({
+    name: "build",
+    ...sandboxedAgent("implement", { mounts: [ioDir] }),
+    cwd: process.cwd(),
+    logging,
+    promptFile: path.join(import.meta.dirname, "build-prompt.md"),
+    promptArgs: { AGENT_IO_DIR: ioDir },
+  })
+);

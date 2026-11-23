@@ -92,8 +92,52 @@ _Avoid_: quota, allowance, rate limit (the plan's own limit is what the budget i
 A run that calls Claude. Only agent runs spend budget and count towards the daily cap; a run that only checks, counts, labels or merges is not one.
 _Avoid_: AI run, Claude run, job
 
+**Daily cap**:
+The most agent runs the budget lets the factory start in one day (from midnight UTC). Work that finds it reached waits as a waiting item.
+_Avoid_: daily limit, quota
+
+**Gate run**:
+The short run, with no agent, that a trigger label starts first: it checks who applied the label, the budget pause, the daily cap, concurrency and the lock, then claims the item and starts its agent run, or queues, pauses or quietly ends.
+_Avoid_: pre-check, dispatcher, guard run
+
+**Claim**:
+Taking an item for a run: its trigger label is swapped for `agent:in-progress`, so no other run starts it. A claim with no agent run behind it is undone and the item blocked.
+_Avoid_: lease, reservation
+
+**Host step**:
+A step of a run that runs on the runner outside the sandbox, never the agent. Host steps hold the tokens; the agent holds none.
+_Avoid_: runner step, outer step
+
+**Entry file**:
+A workflow file that holds only a trigger, permissions and a call to a reusable workflow, at `stable` or `main`. Every factory run starts from one.
+_Avoid_: wrapper, caller workflow, shim (the shim is a target repo's)
+
+**Reusable workflow**:
+The workflow file an entry file calls, holding a run's real jobs; which release of it runs is the entry file's choice.
+_Avoid_: called workflow, template
+
+**Spec queue**:
+The ordered tickets one spec is split into, each naming its position and the positions it depends on. A ticket leaves the queue when it closes, which is when its PR merges.
+_Avoid_: decomposition, plan, backlog
+
+**Split**:
+Implement-spec's first act on a spec with no spec queue yet: an agent cuts the spec into its spec queue, writing no code.
+_Avoid_: decomposition, breakdown, planning run
+
+**Build**:
+Implement-spec's act on a spec that has a spec queue: implementing the queue's next ready ticket, as implement would, with the spec as context.
+_Avoid_: implement run (implement is its own task), step
+
+**Parked ticket**:
+A spec queue ticket whose build failed or hit its ceiling, held out of the queue until a person takes its block off.
+_Avoid_: stuck ticket, skipped ticket
+
+**Explore batch**:
+Every open issue in a target repo that a trusted author labelled for exploring, worked together by one agent run so related tickets are grouped and duplicates closed. It holds the repo's lock and counts once against the daily cap.
+_Avoid_: queue, group (the agent's own clusters inside a batch)
+
 **Lock**:
-The rule that only one run works on a given thing (a ticket, a PR, or a target repo's registration and map) at a time. A run that finds the thing taken queues itself to be restarted later, rather than waiting in line, so no run is ever lost.
+The rule that only one run works on a given thing (a ticket, a PR, or a target repo's registration, map or explore batch) at a time. A run that finds the thing taken queues itself to be restarted later, rather than waiting in line, so no run is ever lost.
 _Avoid_: mutex, concurrency group (the orchestrator's own line, which drops waiting runs)
 
 **Budget pause**:
@@ -107,6 +151,10 @@ _Avoid_: attempt, retry (a retry is a human choosing to give it another go)
 **Requeue run**:
 The factory's scheduler: the one run that restarts queued and paused work when budget or a lock frees up, finishing work before starting it, and moves live spec queues forward. It never restarts work a human has to look at first.
 _Avoid_: scheduler, cron, retry run
+
+**Waiting item**:
+A ticket or PR labelled `factory:queued` or `factory:paused`: work a run could not start for lack of budget, a lock or Claude itself, which the requeue run restarts. Taking the label off cancels it.
+_Avoid_: backlog, pending item
 
 **Ceiling**:
 The most turns and time a single run of a task may spend. A run that reaches it stops and counts as a failed try.
@@ -125,5 +173,41 @@ Where upstream work ends for the factory: a branch on the user's fork that passe
 _Avoid_: upstream PR, draft PR, handoff branch
 
 **Run summary**:
-The short card every run leaves at the top of its run page: what it worked on, how it ended and what it started next. The requeue run's card also shows how much of today's budget is used. A run's full story is its log; the summary is what a human reads first.
-_Avoid_: report, dashboard, status
+The short card every run leaves at the top of its run page: what it worked on, its outcome and what it started next. A run's full story is its log; the summary is what a human reads first.
+_Avoid_: dashboard, status, report (the report is the agent run's whole last word, of which the summary is one part)
+
+**Outcome**:
+How a run ended, as its run summary states it: done, queued, paused, stopped with a reason, failed try n of m, or ceiling hit.
+_Avoid_: result, status, conclusion (the orchestrator's own word for a job's end)
+
+**Report**:
+An agent run's last word on its item, however the run ended: the comment, the labels it sets next and its run summary.
+_Avoid_: summary (only one part of it), final comment
+
+**Budget gauge**:
+The requeue run's run summary: today's agent runs against the daily cap, runs in flight against concurrency, whether a budget pause is open, and how much it restarted. It is where a human sees how much budget is left.
+_Avoid_: dashboard, budget report
+
+**Run name**:
+The name every factory run carries on its run page, which says what task it is, which lock key it holds and whether it is an agent run (`[pr owner/repo#5] review`). Locks and budget counts are read from run names alone, so a run whose name doesn't parse holds no lock and spends no budget.
+_Avoid_: run title, job name
+
+**Lock key**:
+The thing a lock covers, written into a run name: a ticket, a PR, or a whole target repo.
+_Avoid_: concurrency key, mutex name
+
+**Push guard**:
+The host step that checks the agent's new commits before anything is pushed, and refuses them if they carry a secret, the Claude token or any change under `.github/workflows/`. A refusal pushes nothing and is a failed try. It finds the Claude token by its hash, so it never holds the token itself.
+_Avoid_: secret scan (one of its checks), pre-push hook (it runs on the host, not in git)
+
+**Marker**:
+A hidden comment the factory leaves on a waiting item, naming the trigger label it restarts as. Each release reads every marker form the previous release wrote.
+_Avoid_: tag, flag, state comment
+
+**Credential relay**:
+The small server on the runner that holds the Claude token and passes the agent's requests to Claude with it, so the agent never sees the token. Its host step is the only one that reads the token, and it hands later host steps only the token's hash, which is enough to recognise the token in a diff.
+_Avoid_: proxy, gateway (Claude Code's own name for the setting it points at the relay)
+
+**Stand-in token**:
+The worthless token the agent holds in place of the Claude token. The credential relay throws it away and sends the real one.
+_Avoid_: fake key, dummy token, canary (the spike's name for a token planted to be found)

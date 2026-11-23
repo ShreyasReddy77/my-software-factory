@@ -1,16 +1,22 @@
+// The implement agent's host step. It holds no secret: the agent reaches
+// Claude through the relay an earlier host step started.
+//   AGENT_IO_DIR  a folder shared with the sandbox: ticket.md in, pr-body.md out
+//   OUTPUT_DIR    where agent-end.json lands: how the agent ended, its turns and tokens
+// Run it from the target repo's checkout, on the branch the agent commits to.
 import * as path from "node:path";
 import * as sandcastle from "@ai-hero/sandcastle";
-import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
-import { claudeAgent } from "../shared/common";
+import { runAgentStep } from "../shared/agent-step";
+import { required, sandboxedAgent } from "../shared/common";
 
-// The agent edits files and commits them itself, so the repo's pre-commit
-// hook runs on its work and it has to fix whatever the hook rejects. It does
-// not push or open the PR, and it holds no GitHub token to do either — the
-// workflow steps after this one do, where you can read them.
-await sandcastle.run({
-  name: "implement",
-  agent: claudeAgent(),
-  sandbox: noSandbox(),
-  logging: { type: "stdout" },
-  promptFile: path.join(import.meta.dirname, "prompt.md"),
-});
+const ioDir = required("AGENT_IO_DIR");
+
+await runAgentStep("implement", (logging) =>
+  sandcastle.run({
+    name: "implement",
+    ...sandboxedAgent("implement", { mounts: [ioDir] }),
+    cwd: process.cwd(),
+    logging,
+    promptFile: path.join(import.meta.dirname, "prompt.md"),
+    promptArgs: { AGENT_IO_DIR: ioDir },
+  })
+);

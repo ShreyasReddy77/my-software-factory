@@ -1,0 +1,236 @@
+name: Review — agent run job
+
+# Called by review-agent.yml at @stable or @main. agent-review.yml's header is
+# the operator's manual for the whole task; this file is its agent run's job.
+
+on:
+  workflow_call:
+    inputs:
+      factory_sha:
+        type: string
+        required: true
+      pr:
+        type: string
+        required: true
+      job_timeout:
+        type: string
+        required: true
+    secrets:
+      FACTORY_APP_PRIVATE_KEY:
+        required: true
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  FACTORY_REPO: ShreyasReddy77/my-software-factory
+
+jobs:
+  agent:
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ fromJSON(inputs.job_timeout) }}
+    env:
+      TARGET_REPO: ${{ github.repository }}
+      PR: ${{ inputs.pr }}
+      RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Check out the factory at the pinned commit
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.FACTORY_REPO }}
+          ref: ${{ inputs.factory_sha }}
+          path: factory
+          persist-credentials: false
+
+      - name: Set up the factory and the sandbox
+        uses: ./factory/.github/actions/setup-factory
+        with:
+          factory-repo: ${{ env.FACTORY_REPO }}
+          agent: "true"
+
+      - name: Mint the PR reader's token
+        id: read-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-pull-requests: read
+          permission-issues: read
+
+      - name: Read the PR, its spec and the App's git identity
+        id: pr
+        env:
+          GH_TOKEN: ${{ steps.read-token.outputs.token }}
+          FACTORY_APP_SLUG: ${{ steps.read-token.outputs.app-slug }}
+        run: |
+          set -euo pipefail
+          factory/.sandcastle/node_modules/.bin/tsx factory/.sandcastle/agent-workflows/review/read-pr.ts
+          echo "bot-id=$(gh api "users/${FACTORY_APP_SLUG}%5Bbot%5D" --jq .id)" >> "$GITHUB_OUTPUT"
+
+      - name: Name the branches
+        env:
+          HEAD_REF: ${{ steps.pr.outputs.head-ref }}
+        run: |
+          set -euo pipefail
+          {
+            echo "BRANCH=$HEAD_REF"
+            echo "FALLBACK_BRANCH=$HEAD_REF-$GITHUB_RUN_ID"
+          } >> "$GITHUB_ENV"
+
+      - name: Check out the pull request
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.head-sha }}
+          path: target
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Open the branch
+        working-directory: target
+        env:
+          FACTORY_APP_SLUG: ${{ steps.read-token.outputs.app-slug }}
+          BOT_ID: ${{ steps.pr.outputs.bot-id }}
+        run: |
+          set -euo pipefail
+          git config user.name "${FACTORY_APP_SLUG}[bot]"
+          git config user.email "${BOT_ID}+${FACTORY_APP_SLUG}[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+
+      - name: Start the credential relay
+        id: relay
+        env:
+          CLAUDE_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: factory/.sandcastle/agent-workflows/shared/start-relay.sh
+
+      - name: Review the pull request
+        working-directory: target
+        env:
+          BASE_REF: ${{ steps.pr.outputs.base-ref }}
+          PR_NUMBER: ${{ inputs.pr }}
+        run: ../factory/.sandcastle/node_modules/.bin/tsx ../factory/.sandcastle/agent-workflows/review/review.ts
+
+      - name: Scan the review's commits with the push guard
+        env:
+          REPO_DIR: target
+          PUSH_BASE: ${{ steps.pr.outputs.head-sha }}
+          PUSH_HEAD: HEAD
+          CLAUDE_TOKEN_SHA256: ${{ steps.relay.outputs.claude-token-sha256 }}
+        run: factory/.sandcastle/node_modules/.bin/tsx factory/.sandcastle/agent-workflows/shared/guard-push.ts
+
+      - name: Decide whether to push
+        id: decide
+        env:
+          REPO_DIR: target
+          PUSH_BASE: ${{ steps.pr.outputs.head-sha }}
+        run: factory/.sandcastle/node_modules/.bin/tsx factory/.sandcastle/agent-workflows/review/decide-end.ts
+
+      - name: Mint the pusher's token
+        id: push-token
+        if: steps.decide.outputs.push == 'true'
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+
+      - name: Push the review's fixes
+        id: push
+        if: steps.decide.outputs.push == 'true'
+        working-directory: target
+        env:
+          GH_TOKEN: ${{ steps.push-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          push_to() {
+            git -c core.hooksPath=/dev/null \
+              -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+              push "https://github.com/${TARGET_REPO}.git" "HEAD:refs/heads/$1"
+          }
+          if push_to "$BRANCH"; then exit 0; fi
+          echo "::warning::The push to $BRANCH was rejected. Pushing the fixes to $FALLBACK_BRANCH instead."
+          push_to "$FALLBACK_BRANCH"
+          echo "rejected=true" >> "$GITHUB_OUTPUT"
+
+      - name: Mint the fallback PR's token
+        id: fallback-token
+        if: steps.push.outputs.rejected == 'true'
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-pull-requests: write
+
+      - name: Open a draft PR for the rejected push
+        id: fallback
+        if: steps.push.outputs.rejected == 'true'
+        env:
+          GH_TOKEN: ${{ steps.fallback-token.outputs.token }}
+          BASE_REF: ${{ steps.pr.outputs.base-ref }}
+          TITLE: ${{ steps.pr.outputs.title }}
+        run: |
+          set -euo pipefail
+          body="$RUNNER_TEMP/review-fallback.md"
+          {
+            echo "The \`agent:review\` run on #${PR} committed fixes on top of \`${BRANCH}\`,"
+            echo "but \`${BRANCH}\` moved during the run and the push was rejected. These are those fixes,"
+            echo "so they are not lost. Keep this PR or #${PR}, and close the other."
+            echo ""
+            echo "Built unattended by [this run](${RUN_URL})."
+          } > "$body"
+          url="$(gh pr create --draft --repo "$TARGET_REPO" --base "$BASE_REF" --head "$FALLBACK_BRANCH" \
+            --title "$TITLE (review run $GITHUB_RUN_ID)" --body-file "$body")"
+          echo "number=${url##*/}" >> "$GITHUB_OUTPUT"
+
+      - name: Mint the reporter's token
+        id: report-token
+        if: always()
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-pull-requests: write
+          permission-issues: write
+
+      - name: Report back on the pull request
+        if: always()
+        env:
+          GH_TOKEN: ${{ steps.report-token.outputs.token }}
+          FACTORY_APP_SLUG: ${{ steps.report-token.outputs.app-slug }}
+          JOB_STATUS: ${{ job.status }}
+          PUSH_REJECTED: ${{ steps.push.outputs.rejected }}
+          FALLBACK_PR: ${{ steps.fallback.outputs.number }}
+          BRANCH: ${{ env.BRANCH || 'unknown' }}
+          FALLBACK_BRANCH: ${{ env.FALLBACK_BRANCH || 'unknown' }}
+        run: factory/.sandcastle/node_modules/.bin/tsx factory/.sandcastle/agent-workflows/review/report.ts
+
+  requeue:
+    needs: agent
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Mint the requeue starter's token
+        id: token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+          owner: ShreyasReddy77
+          repositories: my-software-factory
+          permission-actions: write
+
+      - name: Start the requeue run
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: gh workflow run requeue.yml --repo "$FACTORY_REPO" --ref main -f finishing_run_id="$GITHUB_RUN_ID"

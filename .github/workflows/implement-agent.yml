@@ -1,0 +1,55 @@
+name: Implement — agent run
+
+# Started only by implement's gate run, by workflow_dispatch. It holds only
+# the trigger, permissions, run name and a call: the job runs from
+# implement-agent-run.yml at the ref the gate run passed (@stable or @main),
+# at the commit the gate run pinned. agent-implement.yml's header is the
+# operator's manual.
+
+on:
+  workflow_dispatch:
+    inputs:
+      factory_ref:
+        description: stable or main, the factory ref this task runs
+        type: string
+        required: true
+      factory_sha:
+        description: The factory commit the gate run pinned
+        type: string
+        required: true
+      issue:
+        description: The ticket's number
+        type: string
+        required: true
+      job_timeout:
+        description: implement's agent_minutes plus 15
+        type: string
+        required: true
+
+run-name: "[ticket ${{ github.repository }}#${{ inputs.issue }}] implement"
+
+permissions:
+  contents: read
+
+jobs:
+  agent-stable:
+    if: inputs.factory_ref == 'stable'
+    uses: ShreyasReddy77/my-software-factory/.github/workflows/implement-agent-run.yml@stable
+    with:
+      factory_sha: ${{ inputs.factory_sha }}
+      issue: ${{ inputs.issue }}
+      job_timeout: ${{ inputs.job_timeout }}
+    secrets:
+      FACTORY_APP_PRIVATE_KEY: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+  agent-main:
+    if: inputs.factory_ref == 'main'
+    uses: ShreyasReddy77/my-software-factory/.github/workflows/implement-agent-run.yml@main
+    with:
+      factory_sha: ${{ inputs.factory_sha }}
+      issue: ${{ inputs.issue }}
+      job_timeout: ${{ inputs.job_timeout }}
+    secrets:
+      FACTORY_APP_PRIVATE_KEY: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

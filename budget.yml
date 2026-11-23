@@ -1,0 +1,19 @@
+# The factory's plan settings: the only place a model or credential is chosen.
+# Runs always read this file from main. Moving from Pro to Max means raising
+# daily_runs and concurrent_runs (Max is roughly x5) and regenerating the
+# Claude token secret; moving to an API key means credential: api-key and
+# putting the key in that secret.
+credential: subscription        # subscription or api-key
+daily_runs: 8                   # agent runs a day, from midnight UTC; an explore batch is one
+concurrent_runs: 1              # agent runs in flight at once
+priority:                       # finish before start; oldest first within a group
+  - [merge]
+  - [fix-ci, address-review]
+  - [review]
+  - [implement, implement-spec]
+  - [explore, map, lesson-draft, self-improvement]
+tasks:                          # full model IDs only, never aliases, never Fable
+  explore: { model: claude-sonnet-5-5, max_turns: 30, agent_minutes: 15 }
+  implement: { model: claude-opus-5-5, max_turns: 80, agent_minutes: 45 }
+  implement-spec: { model: claude-opus-5-5, max_turns: 50, agent_minutes: 30 }
+  review: { model: claude-opus-5-5, max_turns: 30, agent_minutes: 15 }
