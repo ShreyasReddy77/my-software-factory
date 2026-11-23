@@ -31,7 +31,7 @@ name: Agent — Explore The Tickets
 #          whole batch is one agent run against the daily cap.
 #
 #   2. The agent run (explore-agent.yml, which calls explore-agent-run.yml at
-#      @stable or @main), three jobs:
+#      the ref the gate run passed, @stable or @main), three jobs:
 #        explore  writes the batch (titles, bodies, trusted comments) to a file
 #                 and runs the agent (.sandcastle/agent-workflows/explore/)
 #                 under bwrap() behind the credential relay, with explore's

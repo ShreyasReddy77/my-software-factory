@@ -1,0 +1,59 @@
+name: Requeue run job
+
+# Called by requeue.yml at @main. requeue.yml's header is the operator's
+# manual; this file is the requeue run's job. Its logic is
+# .sandcastle/agent-workflows/requeue/.
+
+on:
+  workflow_call:
+    inputs:
+      finishing_run_id:
+        type: string
+        required: false
+        default: ""
+    secrets:
+      FACTORY_APP_PRIVATE_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  FACTORY_REPO: ShreyasReddy77/my-software-factory
+
+jobs:
+  requeue:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the factory
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.FACTORY_REPO }}
+          ref: main
+          path: factory
+          persist-credentials: false
+
+      - name: Set up the factory
+        uses: ./factory/.github/actions/setup-factory
+        with:
+          factory-repo: ${{ env.FACTORY_REPO }}
+
+      - name: Mint the requeue run's token
+        id: token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+          owner: ShreyasReddy77
+          repositories: my-software-factory
+          permission-issues: write
+          permission-pull-requests: write
+          permission-actions: read
+
+      - name: Close a passed pause, restart waiting items, write the budget gauge
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          FACTORY_APP_SLUG: ${{ steps.token.outputs.app-slug }}
+          FINISHING_RUN_ID: ${{ inputs.finishing_run_id }}
+        run: factory/.sandcastle/node_modules/.bin/tsx factory/.sandcastle/agent-workflows/requeue/requeue.ts

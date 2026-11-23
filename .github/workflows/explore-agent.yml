@@ -8,6 +8,10 @@ name: Explore — agent run
 on:
   workflow_dispatch:
     inputs:
+      factory_ref:
+        description: stable or main, the factory ref this task runs
+        type: string
+        required: true
       factory_sha:
         description: The factory commit the gate run pinned
         type: string
@@ -28,7 +32,7 @@ permissions:
 
 jobs:
   agent-stable:
-    if: github.repository != 'ShreyasReddy77/my-software-factory'
+    if: inputs.factory_ref == 'stable'
     uses: ShreyasReddy77/my-software-factory/.github/workflows/explore-agent-run.yml@stable
     with:
       factory_sha: ${{ inputs.factory_sha }}
@@ -39,7 +43,7 @@ jobs:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
   agent-main:
-    if: github.repository == 'ShreyasReddy77/my-software-factory'
+    if: inputs.factory_ref == 'main'
     uses: ShreyasReddy77/my-software-factory/.github/workflows/explore-agent-run.yml@main
     with:
       factory_sha: ${{ inputs.factory_sha }}

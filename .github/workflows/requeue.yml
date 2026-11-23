@@ -7,7 +7,7 @@ name: Requeue run
 #       repo, so the next trigger keeps it alive);
 #     - the last job of every agent run (implement, implement-spec, review,
 #       explore), whether the run succeeded or failed, by workflow_dispatch
-#       with an App token;
+#       with an App token, passing its own run id as `finishing_run_id`;
 #     - a person, from the Actions tab (Run workflow).
 #   A plain Actions concurrency group keeps one requeue run going and one
 #   waiting and drops the rest. That is safe: the waiting run re-reads
@@ -16,11 +16,15 @@ name: Requeue run
 #
 # WHAT IT DOES
 #   It is the factory's only clock in Foundation, and calls no agent, so it
-#   never counts against the budget. Its logic is
-#   .sandcastle/agent-workflows/requeue/. In order:
+#   never counts against the budget. This entry file holds the trigger, the
+#   concurrency group and one call to requeue-run.yml at @main: the requeue
+#   run exists only in the factory, which runs @main, so it has no @stable
+#   job. Its logic is .sandcastle/agent-workflows/requeue/. In order:
 #     1. Counts today's agent runs (since midnight UTC) and the agent runs in
 #        flight, from one run list, against budget.yml's `daily_runs` and
-#        `concurrent_runs`.
+#        `concurrent_runs`. The agent run named by `finishing_run_id` counts
+#        today but not as in flight: it is ending, and counting it would
+#        leave no slot for the work it frees.
 #     2. Reads the budget-pause ticket. A timed pause whose reset has passed
 #        is closed with a comment. A pause with no reset time (out of credit,
 #        or a usage limit that named none) is never closed here: the human
@@ -54,6 +58,12 @@ on:
   schedule:
     - cron: "0 * * * *"
   workflow_dispatch:
+    inputs:
+      finishing_run_id:
+        description: The agent run whose last job started this run, if any
+        type: string
+        required: false
+        default: ""
 
 run-name: Requeue run
 
@@ -64,57 +74,11 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  FACTORY_REPO: ShreyasReddy77/my-software-factory
-
 jobs:
   requeue:
     if: github.repository == 'ShreyasReddy77/my-software-factory'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - name: Check out the factory
-        uses: actions/checkout@v4
-        with:
-          path: factory
-          persist-credentials: false
-
-      - name: Read budget.yml from main
-        uses: actions/checkout@v4
-        with:
-          ref: main
-          path: settings
-          sparse-checkout: budget.yml
-          sparse-checkout-cone-mode: false
-          persist-credentials: false
-
-      - name: Use main's budget.yml
-        run: cp settings/budget.yml factory/budget.yml
-
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: factory/.sandcastle/package-lock.json
-
-      - name: Install the factory's dependencies
-        run: npm ci --prefix factory/.sandcastle
-
-      - name: Mint the requeue run's token
-        id: token
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ vars.FACTORY_APP_ID }}
-          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
-          owner: ShreyasReddy77
-          repositories: my-software-factory
-          permission-issues: write
-          permission-pull-requests: write
-          permission-actions: read
-
-      - name: Close a passed pause, restart waiting items, write the budget gauge
-        env:
-          GH_TOKEN: ${{ steps.token.outputs.token }}
-          FACTORY_APP_SLUG: ${{ steps.token.outputs.app-slug }}
-        run: factory/.sandcastle/node_modules/.bin/tsx factory/.sandcastle/agent-workflows/requeue/requeue.ts
+    uses: ShreyasReddy77/my-software-factory/.github/workflows/requeue-run.yml@main
+    with:
+      finishing_run_id: ${{ inputs.finishing_run_id }}
+    secrets:
+      FACTORY_APP_PRIVATE_KEY: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}

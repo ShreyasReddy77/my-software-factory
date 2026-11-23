@@ -29,7 +29,7 @@ name: Agent — Review A Pull Request
 #          timeout. The requeue run restarts queued and paused PRs.
 #
 #   2. The agent run (review-agent.yml, which calls review-agent-run.yml at
-#      @stable or @main). It is cold and memory-less: it shares nothing with
+#      the ref the gate run passed, @stable or @main). It is cold and memory-less: it shares nothing with
 #      the run that built the change, and starts from a fresh checkout of the
 #      PR's head and three primary sources it fetches itself — the diff
 #      against the base as it is now, CODING_STANDARDS.md, and the ticket the

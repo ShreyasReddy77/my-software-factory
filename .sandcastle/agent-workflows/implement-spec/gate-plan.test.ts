@@ -11,7 +11,7 @@ const input = (survey: QueueSurvey, decide: (lockKey: LockKey) => GateDecision =
   spec: { repo: "owner/repo", number: 7 },
   decide,
   survey: () => survey,
-  agentRun: { factoryRepo: "owner/factory", workflow: "agent-implement-spec-run.yml", ref: "main", factorySha: sha },
+  agentRun: { factoryRepo: "owner/factory", workflow: "implement-spec-agent.yml", ref: "main", factorySha: sha },
   agentMinutes: { split: 30, build: 45 },
 });
 
@@ -28,7 +28,7 @@ describe("implement-spec's gate run", () => {
       {
         kind: "dispatch agent run",
         factoryRepo: "owner/factory",
-        workflow: "agent-implement-spec-run.yml",
+        workflow: "implement-spec-agent.yml",
         ref: "main",
         inputs: { factory_ref: "main", factory_sha: sha, mode: "split", spec: "7", issue: "7", job_timeout: "45" },
       },
@@ -54,7 +54,7 @@ describe("implement-spec's gate run", () => {
       {
         kind: "dispatch agent run",
         factoryRepo: "owner/factory",
-        workflow: "agent-implement-spec-run.yml",
+        workflow: "implement-spec-agent.yml",
         ref: "main",
         inputs: { factory_ref: "main", factory_sha: sha, mode: "build", spec: "7", issue: "12", job_timeout: "60" },
       },

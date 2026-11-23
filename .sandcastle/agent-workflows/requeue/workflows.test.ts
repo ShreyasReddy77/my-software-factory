@@ -26,9 +26,28 @@ const mints = (steps: readonly Step[]): Step[] =>
 
 describe("the requeue run's workflow", () => {
   const workflow = load("requeue.yml");
-  const jobs = Object.values(workflow.jobs);
+  const jobs = Object.values(load("requeue-run.yml").jobs);
   const steps = jobs.flatMap((job) => job.steps ?? []);
-  const on = workflow.on as { schedule?: { cron: string }[]; workflow_dispatch?: unknown };
+  const on = workflow.on as {
+    schedule?: { cron: string }[];
+    workflow_dispatch?: { inputs?: Record<string, { required?: boolean }> };
+  };
+
+  it("is a thin entry file that calls requeue-run.yml at @main, the only ref it runs", () => {
+    expect(Object.keys(workflow).sort()).toEqual(["concurrency", "jobs", "name", "on", "permissions", "run-name"]);
+    const calls = Object.values(workflow.jobs);
+    expect(calls.map((job) => job.uses)).toEqual([
+      "ShreyasReddy77/my-software-factory/.github/workflows/requeue-run.yml@main",
+    ]);
+    for (const job of calls)
+      expect(Object.keys(job).every((key) => ["if", "uses", "with", "secrets"].includes(key))).toBe(true);
+  });
+
+  it("takes the finishing agent run's id, optionally, and hands it to the host step", () => {
+    expect(on.workflow_dispatch?.inputs?.finishing_run_id?.required).toBe(false);
+    const host = steps.find((step) => step.run?.includes("requeue/requeue.ts"));
+    expect(host?.env?.FINISHING_RUN_ID).toBe("${{ inputs.finishing_run_id }}");
+  });
 
   it("runs hourly and whenever an agent run starts it", () => {
     expect(on.schedule).toEqual([{ cron: "0 * * * *" }]);
@@ -75,8 +94,8 @@ describe("the requeue run's workflow", () => {
 });
 
 describe.each([
-  "implement-agent.yml",
-  "implement-spec-agent.yml",
+  "implement-agent-run.yml",
+  "implement-spec-agent-run.yml",
   "review-agent-run.yml",
   "explore-agent-run.yml",
 ])("%s's last job", (file) => {
@@ -104,6 +123,7 @@ describe.each([
     ]);
     const start = steps.find((step) => step.run?.includes("gh workflow run requeue.yml"));
     expect(start?.env?.GH_TOKEN).toBe("${{ steps.token.outputs.token }}");
+    expect(start?.run).toContain('-f finishing_run_id="$GITHUB_RUN_ID"');
     expect(read(file)).not.toContain("The requeue run does not exist yet");
   });
 });

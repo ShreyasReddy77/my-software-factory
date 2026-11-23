@@ -1,0 +1,70 @@
+name: Set up the factory
+description: >-
+  The setup every factory job shares, run from the factory checked out at
+  ./factory (a gate run's ref, or an agent run's pinned commit): budget.yml
+  from main, Node.js and the factory's dependencies; for an agent job also the
+  run's folders, Claude Code and Bubblewrap. Holds no secret.
+
+inputs:
+  factory-repo:
+    description: owner/repo of the factory, whose main holds budget.yml
+    required: true
+  agent:
+    description: "true for a job that runs an agent under bwrap()"
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Prepare the run's folders
+      if: inputs.agent == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p "$RUNNER_TEMP/agent-io" "$RUNNER_TEMP/output"
+        {
+          echo "STARTED_AT=$(date +%s)"
+          echo "AGENT_IO_DIR=$RUNNER_TEMP/agent-io"
+          echo "OUTPUT_DIR=$RUNNER_TEMP/output"
+        } >> "$GITHUB_ENV"
+
+    - name: Read budget.yml from main
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.factory-repo }}
+        ref: main
+        path: settings
+        sparse-checkout: budget.yml
+        sparse-checkout-cone-mode: false
+        persist-credentials: false
+
+    - name: Use main's budget.yml
+      shell: bash
+      run: cp settings/budget.yml factory/budget.yml
+
+    - name: Setup Node.js 22
+      uses: actions/setup-node@v4
+      with:
+        node-version: "22"
+        cache: npm
+        cache-dependency-path: factory/.sandcastle/package-lock.json
+
+    - name: Install the factory's dependencies
+      shell: bash
+      run: npm ci --prefix factory/.sandcastle
+
+    - name: Install Claude Code
+      if: inputs.agent == 'true'
+      shell: bash
+      run: npm install -g @anthropic-ai/claude-code
+
+    - name: Install Bubblewrap
+      if: inputs.agent == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        sudo apt-get update
+        sudo apt-get install -y bubblewrap
+        sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+        bwrap --ro-bind / / true
