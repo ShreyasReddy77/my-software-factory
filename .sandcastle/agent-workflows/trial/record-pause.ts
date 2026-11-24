@@ -23,7 +23,13 @@ recordBudgetPause(
   { factoryRepo, factoryAppLogin }
 );
 
-const state = readBudgetPauseTicket(factoryRepo, factoryAppLogin);
+// GitHub's issue list can lag a new issue by a few seconds, so read it again
+// before calling the ticket missing.
+let state = readBudgetPauseTicket(factoryRepo, factoryAppLogin);
+for (let tries = 1; !state.open && tries < 6; tries++) {
+  await new Promise((resolve) => setTimeout(resolve, 5_000));
+  state = readBudgetPauseTicket(factoryRepo, factoryAppLogin);
+}
 if (!state.open) throw new Error("No budget-pause ticket is open after recording the pause");
 console.log(
   `Budget-pause ticket: https://github.com/${factoryRepo}/issues/${state.ticket}` +
