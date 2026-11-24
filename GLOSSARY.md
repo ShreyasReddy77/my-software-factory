@@ -208,6 +208,10 @@ _Avoid_: tag, flag, state comment
 The small server on the runner that holds the Claude token and passes the agent's requests to Claude with it, so the agent never sees the token. Its host step is the only one that reads the token, and it hands later host steps only the token's hash, which is enough to recognise the token in a diff.
 _Avoid_: proxy, gateway (Claude Code's own name for the setting it points at the relay)
 
+**Trial probe**:
+A by-hand check on a real runner of what the unit tests can only stub: that no token is readable inside the sandbox, that the credential relay refuses all but `POST /v1/messages`, that the push guard refuses planted work, and that a forced usage limit opens the budget-pause ticket. Not a task: it starts no item and never counts against the budget.
+_Avoid_: smoke test, canary
+
 **Stand-in token**:
 The worthless token the agent holds in place of the Claude token. The credential relay throws it away and sends the real one.
 _Avoid_: fake key, dummy token, canary (the spike's name for a token planted to be found)

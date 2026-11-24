@@ -1,0 +1,164 @@
+name: Trial probes
+
+# WHAT TRIGGERS IT
+#   By hand only: Actions → Trial probes → Run workflow, on main after a
+#   release (README → Releasing). It touches no target repo and starts no
+#   task, so it needs no label, gate run or lock.
+#
+# WHAT IT DOES
+#   It proves on a real runner what the unit tests can only stub. Each job
+#   fails when its probe does; each script's header says what it checks.
+#     sandbox  Starts the real credential relay, then from inside bwrap()
+#              reads env, /proc/1/environ, every visible process's environ
+#              and .git/config, and fails if the Claude token (found by its
+#              hash) or any credential shows. Asks the relay for paths other
+#              than POST /v1/messages and fails unless it refuses them.
+#              (trial/probe-sandbox.ts)
+#     guard    Runs the real push guard on scratch commits holding a stand-in
+#              Claude token, a real-shaped Anthropic key and a workflow file,
+#              and fails unless it refuses each and passes a clean change.
+#              (trial/probe-guard.ts)
+#     pause    Runs Claude Code inside bwrap() against trial/limit-stub.mjs in
+#              the relay's place, which answers with a usage limit that resets
+#              in 15 minutes. Writes what Claude Code said to the run summary,
+#              then opens the real budget-pause ticket as a report would
+#              (trial/record-pause.ts). While that ticket is open every gate
+#              run pauses its item; the requeue run closes it after the reset.
+#   The relay's log is printed whether or not a job passes.
+#
+# WHAT IT NEEDS
+#   Secrets: CLAUDE_CODE_OAUTH_TOKEN (the sandbox job's relay; its one
+#   relayed ask has an empty body, so it uses no Claude usage) and
+#   FACTORY_APP_PRIVATE_KEY (the pause job opens the ticket). Variable:
+#   FACTORY_APP_ID. Input record_on: the issue or PR the ticket names as
+#   paused, such as the trial's record.
+
+on:
+  workflow_dispatch:
+    inputs:
+      record_on:
+        description: Issue or PR number the budget-pause ticket names as paused
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  FACTORY_REPO: ShreyasReddy77/my-software-factory
+
+jobs:
+  sandbox:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out the factory
+        uses: actions/checkout@v4
+        with:
+          path: factory
+          persist-credentials: false
+
+      - name: Check out the factory again as the target repo
+        uses: actions/checkout@v4
+        with:
+          path: target
+          persist-credentials: false
+
+      - name: Set up the factory and the sandbox
+        uses: ./factory/.github/actions/setup-factory
+        with:
+          factory-repo: ${{ env.FACTORY_REPO }}
+          agent: "true"
+
+      - name: Start the credential relay
+        id: relay
+        env:
+          CLAUDE_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: factory/.sandcastle/agent-workflows/shared/start-relay.sh
+
+      - name: Probe the sandbox and the relay
+        working-directory: target
+        env:
+          CLAUDE_TOKEN_SHA256: ${{ steps.relay.outputs.claude-token-sha256 }}
+        run: ../factory/.sandcastle/node_modules/.bin/tsx ../factory/.sandcastle/agent-workflows/trial/probe-sandbox.ts
+
+      - name: Print the relay's log
+        if: always()
+        run: cat "$RUNNER_TEMP/relay.log" || true
+
+  guard:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the factory
+        uses: actions/checkout@v4
+        with:
+          path: factory
+          persist-credentials: false
+
+      - name: Set up the factory
+        uses: ./factory/.github/actions/setup-factory
+        with:
+          factory-repo: ${{ env.FACTORY_REPO }}
+
+      - name: Probe the push guard
+        run: factory/.sandcastle/node_modules/.bin/tsx factory/.sandcastle/agent-workflows/trial/probe-guard.ts
+
+  pause:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out the factory
+        uses: actions/checkout@v4
+        with:
+          path: factory
+          persist-credentials: false
+
+      - name: Check out the factory again as the target repo
+        uses: actions/checkout@v4
+        with:
+          path: target
+          persist-credentials: false
+
+      - name: Set up the factory and the sandbox
+        uses: ./factory/.github/actions/setup-factory
+        with:
+          factory-repo: ${{ env.FACTORY_REPO }}
+          agent: "true"
+
+      - name: Start the usage-limit stub in the relay's place
+        run: |
+          set -euo pipefail
+          nohup node factory/.sandcastle/agent-workflows/trial/limit-stub.mjs > "$RUNNER_TEMP/limit-stub.log" 2>&1 &
+          for _ in $(seq 100); do
+            if grep -q "limit stub ready" "$RUNNER_TEMP/limit-stub.log"; then exit 0; fi
+            sleep 0.05
+          done
+          cat "$RUNNER_TEMP/limit-stub.log"
+          exit 1
+
+      - name: Run Claude Code into the forced usage limit
+        working-directory: target
+        run: ../factory/.sandcastle/node_modules/.bin/tsx ../factory/.sandcastle/agent-workflows/trial/probe-pause.ts
+
+      - name: Mint the reporter's token
+        id: report-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-issues: write
+
+      - name: Open the budget-pause ticket
+        env:
+          GH_TOKEN: ${{ steps.report-token.outputs.token }}
+          FACTORY_APP_SLUG: ${{ steps.report-token.outputs.app-slug }}
+          RECORD_ON: ${{ inputs.record_on }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: factory/.sandcastle/node_modules/.bin/tsx factory/.sandcastle/agent-workflows/trial/record-pause.ts
+
+      - name: Print what the stub was asked
+        if: always()
+        run: cat "$RUNNER_TEMP/limit-stub.log" || true

@@ -56,6 +56,7 @@ composite action `.github/actions/setup-factory`.
 | Review | `agent:review` on a factory PR | `agent-review.yml`, `review-agent.yml` | `gate-run.yml` | `review-agent-run.yml` |
 | Explore | `agent:explore` on an issue (one batch per repo) | `agent-explore.yml`, `explore-agent.yml` | `gate-run.yml` | `explore-agent-run.yml` |
 | Requeue run | hourly, the end of every agent run, or Run workflow | `requeue.yml` | none: no agent, never counts against the budget | `requeue-run.yml` (`@main` only) |
+| Trial probes | Run workflow, by hand after a release | `trial-probes.yml` | none: not a task, starts no item | the same file (`@main` only) |
 
 The first entry file of each task is its operator's manual. Scripts and
 prompts live in `.sandcastle/agent-workflows/<task>/`; plan settings (models,
@@ -188,6 +189,16 @@ to one of those formats reads both forms until the old one is gone.
    (`git rev-parse "stable-2026-11-20^{commit}"`) and the older one the
    previous release's. If not, the tag didn't move: fix it before anything
    else runs.
+6. **Run the trial probes** when the release touches the sandbox, the
+   credential relay, the push guard or the budget pause:
+
+   ```sh
+   gh workflow run trial-probes.yml -f record_on=<an issue to name>
+   ```
+
+   All three jobs must pass. The pause job opens the budget-pause ticket on
+   purpose, which pauses every gate run for 15 minutes, until the requeue
+   run closes it; run it when nothing is in flight.
 
 **Rolling back** is step 4 with the previous release's name: move `stable`
 back to it. If a release you roll back past says "not rollback-safe", the
