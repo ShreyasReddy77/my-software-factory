@@ -9,6 +9,7 @@ Foundation the only target is this repository. The design lives in
 - [What needs you](#what-needs-you)
 - [The workflows](#the-workflows)
 - [One-time setup](#one-time-setup)
+- [Running the tests](#running-the-tests)
 - [Releasing the factory](#releasing-the-factory)
 
 ## What needs you
@@ -136,6 +137,12 @@ From a fresh clone of this repository, with `gh` signed in as its owner.
    read its run summary: it shows the budget gauge with nothing restarted.
    Then label a small issue `agent:implement` and follow its gate run and
    agent run in the Actions tab.
+
+## Running the tests
+
+```sh
+npm test --prefix .sandcastle
+```
 
 ## Releasing the factory
 
