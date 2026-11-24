@@ -91,10 +91,10 @@ const expectThinEntry = (workflow: Workflow, reusable: string): void => {
 };
 
 describe("the factory's workflow files", () => {
-  it("are entry files, named agent-<task>.yml and <task>-agent.yml, or reusable ones named *-run.yml", () => {
+  it("are entry files, named agent-<task>.yml and <task>-agent.yml, reusable ones named *-run.yml, or the trial probes", () => {
     const files = fs.readdirSync(workflowsDir).sort();
     for (const file of files)
-      expect(file).toMatch(/^(agent-[a-z-]+|[a-z-]+-agent|requeue)\.yml$|^[a-z-]+-run\.yml$/);
+      expect(file).toMatch(/^(agent-[a-z-]+|[a-z-]+-agent|requeue|trial-probes)\.yml$|^[a-z-]+-run\.yml$/);
     expect(files).not.toContain("implement-gate.yml");
     expect(files).not.toContain("implement-spec-gate.yml");
   });
