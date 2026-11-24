@@ -9,6 +9,7 @@ Foundation the only target is this repository. The design lives in
 - [What needs you](#what-needs-you)
 - [The workflows](#the-workflows)
 - [One-time setup](#one-time-setup)
+- [Running the tests](#running-the-tests)
 - [Releasing the factory](#releasing-the-factory)
 
 ## What needs you
