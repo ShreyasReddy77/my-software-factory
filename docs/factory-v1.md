@@ -488,16 +488,19 @@ Built in order, each its own `/to-spec` → `/to-tickets` → `/implement-spec` 
 ### 2. Targets
 
 **Delivers:**
-- The companion repo (created once) calling the factory's reusable workflows, with its own App key and Claude token, and the shared budget.
-- The shim workflow and shim token for owned repos (forwarding labels, and later `workflow_run` and approvals for phases 3–4).
+- The companion repo, `my-software-factory-private`, created once by the user from a README checklist (the App can't create repos), calling the factory's reusable workflows, with its own App key and Claude token, and the shared budget. Its workflow files are a few generic entry files (labels on companion issues, shim events, an agent run with the task as an input, its requeue run), copied in once, so later phases add tasks without touching the companion. (Targets session)
+- The shim workflow and shim token for owned repos. **The shim starts the factory by `workflow_dispatch`**, so its token stays at Actions: write. It is written once and never changed: from phase 2 it forwards all three shim events (a label, the target's CI finishing, a person's approval) to one shim entry file in the factory (or the companion), which re-checks the event and ignores CI and approval events until phases 3–4 handle them. One shim token per side (public owned repos → factory, private → companion), the same secret in every repo on that side, its expiry date in the README. (Targets session, settling G2)
 - Register, map (first map and re-map, with the no-agent check host step and the registration checklist), move, and unregistering.
 - `target.yml` with `enabled` and `max_runs_per_day`; the visibility gate; the confirmed-checks gate.
-- Re-map tickets and stale-map signals from contradictions. *See [Gaps](#gaps) G7 on the drift check.*
-- ICM maps of the factory repo itself and of the test repos.
+- Re-map tickets and stale-map signals from reported contradictions only. **The drift check (100+ commits, changed check files, vanished names) moves to phase 4** inside the daily watch, and to phase 5 for upstream runs, since a standalone daily check now would be a clock Foundation's three-clocks rule forbids. Until then a person adds `agent:map` by hand. (Targets session, settling G7)
+- ICM maps of the factory repo itself and of the test repos. The factory registers itself through an ordinary `agent:register` ticket, and `spendly` (private, through the companion and a shim) is the other test repo. No target is exempt from the confirmed-checks gate, the factory included, so implement stops on the factory until its map PR merges. (Targets session)
+- Every agent run gets the target's map front page (`AGENTS.md`) as its orientation, and the factory's own `GLOSSARY.md` and `CODING_STANDARDS.md` stop loading for other targets. Review judges other targets against the ticket and the checks only until phase 3 brings in the map's standards. (Targets session)
 
-**Revises in v0:** v0 tasks stop assuming the factory repo is the target: they take a target repo from the trigger and read its ICM map. The prototype branch `prototype/icm-map-spendly` can move into the companion.
+**Revises in v0:** v0 tasks stop assuming the factory repo is the target: they take a target repo from the trigger and read its ICM map. `spendly` is mapped afresh by the map run; the prototype branch is gone.
 
 **Still works when it lands:** v0's four tasks now run on any registered owned repo with a confirmed map, through its shim; the human still merges every PR.
+
+**Proven after merge, as Foundation was.** The trial registers the factory, then `spendly`, and runs a throwaway public repo, `factory-trial-target`, through register, map, a switch to private, every `agent:move` step, and unregistering, before deleting it. (Targets session)
 
 ### 3. PR loop (owned repos)
 
@@ -578,17 +581,15 @@ Every slot names a product, and every task has an answer to every question. Thos
 
 ## Gaps
 
-Contradictions between tickets, and questions no ticket answered. Nothing here is filled in by this digest. Settled gaps move into the rules or the task answers and are deleted here; their numbers are not reused (G1, G4, G6 and G9 were settled in the Foundation session).
+Contradictions between tickets, and questions no ticket answered. Nothing here is filled in by this digest. Settled gaps move into the rules or the task answers and are deleted here; their numbers are not reused (G1, G4, G6 and G9 were settled in the Foundation session, G2 and G7 in the Targets session).
 
 ### Contradictions
 
-- **G2. How the shim starts the factory.** [Cross-repo Actions] (and the map's gist of it) says the shim sends `repository_dispatch`, which needs **Contents: write** on the factory. [Security model] and [Registration] give the shim token **Actions: write** only, which can start a `workflow_dispatch` and not a `repository_dispatch`. *Decide:* `workflow_dispatch` to the entry files (fits the token) or `repository_dispatch` (widens the token). **Owner:** Targets.
 - **G3. A ceiling hit's draft PR vs one open PR per ticket.** [Budget] says a run that hits its ceiling "pushes its work as a draft, comments, and counts as a failed try". [Implement] says a retry after a ceiling hit goes "on a new branch", but also that a run finding an open factory PR for the ticket stops. Unanswered: does the ceiling-hit draft get `factory/checks` and go to review; does the user have to close it before a retry can run; does it count on the trust ladder if closed? **Owner:** PR loop.
 
 ### Missing answers
 
 - **G5. Building a self-improvement ticket.** Its tickets live in the companion ([Private maps]), and it is built by `agent:implement` ([Self-improvement]), but implement builds "a ticket in the target repo" ([Implement]) and its PR "Closes" that ticket. A PR on the public factory can't close, or should even name, a private companion ticket. Also unsaid: where the push scan gets the private target names it must look for ([Private maps]) without the public factory holding them in plain sight. **Owner:** Trust ladder.
-- **G7. Where the drift check lands.** [Spec handoff] puts "re-map and stale maps" in phase 2 (Targets), but the drift check runs inside the daily watch ([Map freshness], [Merge and watch]), built in phase 4. *Decide:* phase 2 builds a standalone daily drift check that phase 4 folds into the watch, or drift detection moves to phase 4 (phase 2 then has only reported contradictions). **Owner:** Targets.
 - **G8. Spec-queue details.** [Implement] has implement-spec "mark the spec live" with a label that is never named, and doesn't say how a queue ticket records its dependencies (GitHub's native "blocked by", or v0's own scheme). **Owner:** PR loop.
 - **G10. No fork yet.** [Registration] says the user forks by hand and installs the App when there's no fork, but not what the run does meanwhile (presumably a checklist comment, `factory:needs-human`, and the user re-adds `agent:upstream`). **Owner:** Upstream.
 - **G11. Fix-CI's triage on a merge conflict.** [Merge and watch] sends conflicts to fix-CI as a try, but fix-CI's triage ([Fix-CI and address-review]) re-runs failing checks, and a conflict has none. *Decide:* whether triage is skipped for conflicts. **Owner:** Trust ladder.

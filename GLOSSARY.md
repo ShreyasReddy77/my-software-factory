@@ -40,6 +40,10 @@ _Avoid_: deployed, released, in production
 The one small workflow an owned repo carries, which only tells the factory that something happened there: a label was applied, or, on the factory's own branches, the repo's CI finished or a human approved. The factory never believes it: it checks for itself before any run.
 _Avoid_: agent workflow, installer, webhook
 
+**Shim event**:
+One of the three things a shim forwards to the factory: a label applied, the target's CI finishing on a factory branch, or a person approving a factory PR. Every shim forwards all three from the start, to one entry file that re-checks each event and ignores any its phase doesn't handle yet, so a shim is never edited after it is installed.
+_Avoid_: dispatch, webhook, trigger (the label is the trigger; the shim event only carries news of it)
+
 **Trusted author**:
 A person with write access to the target repo, or the factory itself. Other bots and apps never count, even with write access. Only trusted authors' words reach an agent, with two exceptions. When a trusted author labels an issue for the factory, they vouch for its title and body as they stood at that moment, whoever wrote them. On an upstream repo, the maintainers' review comments are also read, but only the ones present when the user started the round.
 _Avoid_: collaborator, maintainer, allowed user
